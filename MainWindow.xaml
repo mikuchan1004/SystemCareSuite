@@ -1,0 +1,711 @@
+<Window x:Class="SystemCareSuite.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="SystemCareSuite - All-in-One Windows Care Center"
+        Width="1240" Height="780"
+        MinWidth="1120" MinHeight="700"
+        UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="ClearType"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BgDeepBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}"
+        Closed="Window_Closed">
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="276"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ==================== BACKGROUND WALLPAPER LAYER (Miku_Jirai) ==================== -->
+        <Grid Grid.ColumnSpan="2" Panel.ZIndex="0" IsHitTestVisible="False">
+            <Image Source="/Miku_Jirai.jpg"
+                   Stretch="UniformToFill"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Top"
+                   Opacity="0.24"/>
+            <Border>
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
+                        <GradientStop Color="#150B0F17" Offset="0"/>
+                        <GradientStop Color="#880B0F17" Offset="0.78"/>
+                        <GradientStop Color="#DD0B0F17" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+            </Border>
+        </Grid>
+
+        <!-- ==================== LEFT SIDEBAR ==================== -->
+        <Border Grid.Column="0" Panel.ZIndex="1"
+                Background="{StaticResource BgSidebarBrush}"
+                BorderBrush="{StaticResource BorderSubtleBrush}"
+                BorderThickness="0,0,1,0"
+                Padding="16,24">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="28"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Brand Logo & Title -->
+                <Grid Grid.Row="0" VerticalAlignment="Center">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Width="44" Height="44" CornerRadius="10"
+                            Background="#162436" BorderBrush="{StaticResource NeonCyanBrush}" BorderThickness="1.5"
+                            Margin="0,0,12,0">
+                        <TextBlock Text="🛡️" FontSize="20" Padding="2" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="SystemCareSuite" FontSize="17" FontWeight="ExtraBold" Foreground="#00F0FF"/>
+                        <TextBlock Text="ALL-IN-ONE SYSTEM CARE" FontSize="10" FontWeight="Bold" Foreground="#6E7681" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Navigation Menu -->
+                <StackPanel Grid.Row="2">
+                    <TextBlock Text="CORE MODULES" FontSize="11" FontWeight="Bold" Foreground="#586574" Margin="8,0,0,8"/>
+
+                    <RadioButton x:Name="NavDashboard" Style="{StaticResource NavTabStyle}" IsChecked="True" Checked="NavTab_Checked">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="28"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="📊" FontSize="15" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="대시보드 &amp; RAM 부스트" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                        </Grid>
+                    </RadioButton>
+
+                    <RadioButton x:Name="NavCleaner" Style="{StaticResource NavTabStyle}" Checked="NavTab_Checked">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="28"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="🧹" FontSize="15" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="시스템 &amp; 개발 클리너" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                        </Grid>
+                    </RadioButton>
+
+                    <RadioButton x:Name="NavRegistry" Style="{StaticResource NavTabStyle}" Checked="NavTab_Checked">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="28"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="🗂️" FontSize="15" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="레지스트리 &amp; 시작앱" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                        </Grid>
+                    </RadioButton>
+
+                    <RadioButton x:Name="NavWinSxS" Style="{StaticResource NavTabStyle}" Checked="NavTab_Checked">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="28"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="📦" FontSize="15" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="WinSxS 저장소 관리" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                        </Grid>
+                    </RadioButton>
+                </StackPanel>
+
+                <!-- Sidebar Footer Info -->
+                <Border Grid.Row="3" Background="#151E2E" CornerRadius="10" Padding="14,12" BorderBrush="#243147" BorderThickness="1">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="⚡" FontSize="12" Foreground="{StaticResource NeonMintBrush}" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="관리자 권한 활성화됨" FontSize="12" FontWeight="Bold" Foreground="{StaticResource NeonMintBrush}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock x:Name="TxtSidebarUptime" Text="Uptime: 00:00:00" FontSize="12" Foreground="#8B949E" Margin="0,6,0,0"/>
+                        <TextBlock Text="v1.0.0 · .NET 8.0 Portable" FontSize="11" Foreground="#586574" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- ==================== MAIN CONTENT AREA ==================== -->
+        <Grid Grid.Column="1" Panel.ZIndex="1" Margin="26,22,26,22">
+
+            <!-- ========================================================== -->
+            <!-- MODULE 1: DASHBOARD & RAM BOOST                            -->
+            <!-- ========================================================== -->
+            <Grid x:Name="PageDashboard" Visibility="Visible">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Header -->
+                <Grid Grid.Row="0" Margin="0,0,0,18">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="📊" FontSize="21" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="실시간 시스템 대시보드 &amp; 메모리 최적화" FontSize="22" FontWeight="ExtraBold" Foreground="#F0F6FC" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock Text="CPU·RAM·디스크 리소스 상태를 실시간 추적하고 유휴 물리 메모리를 즉시 확보합니다." FontSize="13" Foreground="#8B949E" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <Button Grid.Column="1"
+                            x:Name="BtnQuickRamBoost"
+                            Style="{StaticResource NeonActionButton}"
+                            Background="{StaticResource NeonMintBrush}"
+                            VerticalAlignment="Center"
+                            Click="BtnRamBoost_Click"
+                            Content="⚡ 원클릭 RAM 메모리 부스트"/>
+                </Grid>
+
+                <!-- Top 3 Metric Cards -->
+                <UniformGrid Grid.Row="1" Columns="3" Margin="0,0,0,18">
+                    <!-- CPU Card -->
+                    <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,8,0">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="CPU 프로세서 부하" FontSize="13" FontWeight="SemiBold" Foreground="#8B949E"/>
+                                <TextBlock Grid.Column="1" x:Name="TxtCoreCount" Text="Threads" FontSize="12" FontWeight="SemiBold" Foreground="#00F0FF"/>
+                            </Grid>
+                            <TextBlock x:Name="TxtCpuPercent" Text="0.0%" FontSize="30" FontWeight="ExtraBold" Foreground="#00F0FF" Margin="0,8,0,8"/>
+                            <ProgressBar x:Name="PbCpu" Height="8" Minimum="0" Maximum="100" Value="0" Background="#0D131F" Foreground="#00F0FF" BorderThickness="0"/>
+                            <TextBlock x:Name="TxtCpuSub" Text="실시간 프로세서 활성 상태" FontSize="12" Foreground="#8B949E" Margin="0,8,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- RAM Card -->
+                    <Border Style="{StaticResource CardBorderStyle}" Margin="4,0,4,0">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="물리 메모리 (RAM)" FontSize="13" FontWeight="SemiBold" Foreground="#8B949E"/>
+                                <TextBlock Grid.Column="1" x:Name="TxtRamBadge" Text="정상" FontSize="12" FontWeight="Bold" Foreground="#00E5A3"/>
+                            </Grid>
+                            <TextBlock x:Name="TxtRamPercent" Text="0.0%" FontSize="30" FontWeight="ExtraBold" Foreground="#00E5A3" Margin="0,8,0,8"/>
+                            <ProgressBar x:Name="PbRam" Height="8" Minimum="0" Maximum="100" Value="0" Background="#0D131F" Foreground="#00E5A3" BorderThickness="0"/>
+                            <TextBlock x:Name="TxtRamDetail" Text="0.0 GB / 0.0 GB (여유 0.0 GB)" FontSize="12" Foreground="#8B949E" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- System Uptime & Boost Status Card -->
+                    <Border Style="{StaticResource CardBorderStyle}" Margin="8,0,0,0">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="시스템 업타임 &amp; 부스트" FontSize="13" FontWeight="SemiBold" Foreground="#8B949E"/>
+                                <TextBlock Grid.Column="1" Text="ACTIVE" FontSize="11.5" FontWeight="Bold" Foreground="#00F0FF"/>
+                            </Grid>
+                            <TextBlock x:Name="TxtUptimeMain" Text="00:00:00" FontSize="26" FontWeight="ExtraBold" Foreground="#F0F6FC" Margin="0,10,0,8"/>
+                            <Border Background="#990E1420" CornerRadius="6" Padding="10,7" BorderBrush="#33FFFFFF" BorderThickness="1">
+                                <TextBlock x:Name="TxtRamBoostResult" Text="💡 상단 버튼으로 유휴 RAM을 정리하세요" FontSize="11.5" Foreground="#00E5A3" TextWrapping="Wrap"/>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </UniformGrid>
+
+                <!-- Bottom Split: Drives & Top Processes -->
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.12*"/>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="0.88*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Drives Card -->
+                    <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0" Margin="0,0,0,14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="💾" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="로컬 스토리지 드라이브 상태" FontSize="15" FontWeight="Bold" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="🔄 새로고침" Style="{StaticResource OutlineActionButton}" Padding="12,5" FontSize="12" Click="BtnRefreshDrives_Click"/>
+                            </Grid>
+
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl x:Name="IcDrives">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="#990E1420" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,4,10"
+                                                    Cursor="Hand" MouseLeftButtonDown="DriveCard_MouseLeftButtonDown" ToolTip="클릭하여 탐색기에서 드라이브 열기">
+                                                <StackPanel>
+                                                    <Grid Margin="0,0,0,6">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="{Binding HeaderText}" FontSize="14" FontWeight="Bold" Foreground="#F0F6FC"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding PercentText}" FontSize="13.5" FontWeight="Bold" Foreground="{Binding BarBrush}"/>
+                                                    </Grid>
+                                                    <ProgressBar Height="8" Minimum="0" Maximum="100" Value="{Binding UsagePercent, Mode=OneWay}"
+                                                                 Background="#44FFFFFF" Foreground="{Binding BarBrush}" BorderThickness="0" Margin="0,2,0,6"/>
+                                                    <TextBlock Text="{Binding UsageText}" FontSize="12" Foreground="#B8C4D0"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+
+                    <!-- Top Memory Processes Card -->
+                    <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0" Margin="0,0,0,14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                                    <TextBlock Text="🔥" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="메모리 상위 프로세스 (TOP 6)" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="🔄 갱신" Style="{StaticResource OutlineActionButton}" Padding="12,5" FontSize="12" Click="BtnRefreshProcs_Click"/>
+                            </Grid>
+
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl x:Name="IcTopProcesses">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="#990E1420" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="8" Padding="12,9" Margin="0,0,4,8">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Grid.Column="0" Width="26" Height="26" CornerRadius="6" Background="#1C293E" Margin="0,0,10,0" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Rank}" FontSize="12" FontWeight="Bold" Foreground="#00F0FF" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0">
+                                                        <TextBlock Text="{Binding ProcessName}" FontSize="13" FontWeight="SemiBold" Foreground="#F0F6FC" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding Pid, StringFormat='PID: {0}'}" FontSize="11" Foreground="#6E7681"/>
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2" Text="{Binding MemoryText}" FontSize="13.5" FontWeight="Bold" Foreground="#00E5A3" VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <!-- ========================================================== -->
+            <!-- MODULE 2: SYSTEM & DEV CLEANER                             -->
+            <!-- ========================================================== -->
+            <Grid x:Name="PageCleaner" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Header -->
+                <Grid Grid.Row="0" Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="🧹" FontSize="21" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="통합 시스템 &amp; 개발 폴더 클리너" FontSize="22" FontWeight="ExtraBold" Foreground="#F0F6FC" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock Text="Windows 임시/업데이트 캐시, Discord 캐시, 개발 프로젝트(bin/obj/.vs) 찌꺼기를 사전 스캔하고 안전하게 소탕합니다." FontSize="13" Foreground="#8B949E" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="BtnScanCleaner" Style="{StaticResource OutlineActionButton}" Content="🔍 사전 용량 스캔" Margin="0,0,10,0" Click="BtnScanCleaner_Click"/>
+                        <Button x:Name="BtnRunCleaner" Style="{StaticResource NeonActionButton}" Content="🧹 선택 항목 즉시 정리" Click="BtnRunCleaner_Click"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Dev Folder Path & Estimated Summary Bar -->
+                <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Padding="16,12" Margin="0,0,0,16">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="240"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="📂 개발 폴더 경로:" FontSize="13" FontWeight="SemiBold" Foreground="#8B949E" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBox Grid.Column="1" x:Name="TxtDevRootPath" Text="F:\Project"
+                                 Background="#0B0F17" Foreground="#F0F6FC" BorderBrush="#30405A" BorderThickness="1"
+                                 Padding="8,5" FontSize="13" VerticalContentAlignment="Center"/>
+                        <Button Grid.Column="2" Content="폴더 변경..." Style="{StaticResource OutlineActionButton}" Padding="12,5" FontSize="12" Margin="8,0,12,0" Click="BtnBrowseDevRoot_Click"/>
+
+                        <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="전체 선택" Style="{StaticResource OutlineActionButton}" Padding="10,5" FontSize="12" Margin="0,0,6,0" Click="BtnSelectAllCleaner_Click"/>
+                            <Button Content="선택 해제" Style="{StaticResource OutlineActionButton}" Padding="10,5" FontSize="12" Margin="0,0,14,0" Click="BtnDeselectAllCleaner_Click"/>
+                            <TextBlock Text="예상 확보 용량: " FontSize="13" Foreground="#8B949E" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="TxtCleanerEstimatedTotal" Text="스캔 전" FontSize="15" FontWeight="ExtraBold" Foreground="#00E5A3" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Main Split: Target Checklist + Real-time Log -->
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.15*"/>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="0.85*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: Checklist -->
+                    <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}" Padding="14">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="IcCleanerTargets">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#990E1420" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="9" Padding="12,10" Margin="0,0,4,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,10,0">
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Border Background="#1B2A40" CornerRadius="4" Padding="6,2" Margin="0,0,8,0" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Category}" FontSize="11" FontWeight="Bold" Foreground="#00F0FF"/>
+                                                        </Border>
+                                                        <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Bold" Foreground="#F0F6FC" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding Description}" FontSize="12" Foreground="#8B949E" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" MinWidth="82">
+                                                    <TextBlock Text="{Binding EstimatedSizeText}" FontSize="13.5" FontWeight="ExtraBold" Foreground="#00E5A3" HorizontalAlignment="Right"/>
+                                                    <TextBlock Text="{Binding StatusText}" FontSize="11.5" Foreground="#8B949E" HorizontalAlignment="Right" Margin="0,2,0,0"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- Right: Progress & Console Log -->
+                    <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <Grid Grid.Row="0" Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="🖥️ 클리너 실시간 작업 로그" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" x:Name="TxtCleanerStatus" Text="대기 중" FontSize="12" Foreground="#00F0FF" VerticalAlignment="Center"/>
+                            </Grid>
+
+                            <ProgressBar Grid.Row="1" x:Name="PbCleaner" Height="8" Minimum="0" Maximum="100" Value="0"
+                                         Background="#0B0F17" Foreground="#00F0FF" BorderThickness="0" Margin="0,0,0,12"/>
+
+                            <Border Grid.Row="2" Background="#990B0F17" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="8" Padding="10">
+                                <ScrollViewer x:Name="SvCleanerLog" VerticalScrollBarVisibility="Auto">
+                                    <TextBlock x:Name="TxtCleanerLog"
+                                               Text="💡 [사전 용량 스캔]을 누르면 삭제 전 예상 확보 용량을 계산하며, [선택 항목 즉시 정리]를 누르면 안전하게 정리를 시작합니다."
+                                               FontFamily="Consolas, Malgun Gothic"
+                                               FontSize="12.5"
+                                               LineHeight="19"
+                                               Foreground="#C9D1D9"
+                                               TextWrapping="Wrap"/>
+                                </ScrollViewer>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <!-- ========================================================== -->
+            <!-- MODULE 3: REGISTRY & STARTUP MANAGER                       -->
+            <!-- ========================================================== -->
+            <Grid x:Name="PageRegistry" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Header -->
+                <Grid Grid.Row="0" Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="🗂️" FontSize="21" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="레지스트리 스캐너 &amp; 시작프로그램 관리" FontSize="22" FontWeight="ExtraBold" Foreground="#F0F6FC" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock Text="유령 시작프로그램, 삭제된 소프트웨어 잔상, 깨진 확장자 연결 및 MUI 캐시를 정밀 진단합니다." FontSize="13" Foreground="#8B949E" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="BtnViewActiveStartup" Style="{StaticResource OutlineActionButton}" Content="🚀 정상 시작앱 조회" Margin="0,0,8,0" Click="BtnViewActiveStartup_Click"/>
+                        <Button x:Name="BtnRegScan" Style="{StaticResource OutlineActionButton}" BorderBrush="#00F0FF" Foreground="#00F0FF" Content="🔍 문제 레지스트리 스캔" Margin="0,0,8,0" Click="BtnRegScan_Click"/>
+                        <Button x:Name="BtnRegClean" Style="{StaticResource NeonActionButton}" Background="{StaticResource NeonCrimsonBrush}" Foreground="White" Content="🗑️ 선택 항목 정리" Click="BtnRegClean_Click"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Filter & Summary Bar -->
+                <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Padding="16,12" Margin="0,0,0,14">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="165"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="카테고리 필터:" FontSize="13" FontWeight="SemiBold" Foreground="#8B949E" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <ComboBox Grid.Column="1" x:Name="CbRegFilter" SelectedIndex="0" SelectionChanged="CbRegFilter_SelectionChanged" VerticalContentAlignment="Center" Padding="8,4">
+                            <ComboBoxItem Content="전체 리스트"/>
+                            <ComboBoxItem Content="시작 프로그램"/>
+                            <ComboBoxItem Content="소프트웨어 잔상"/>
+                            <ComboBoxItem Content="MUI 캐시"/>
+                            <ComboBoxItem Content="확장자 연결"/>
+                            <ComboBoxItem Content="정상 시작앱"/>
+                        </ComboBox>
+
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                            <Button Content="전체 선택" Style="{StaticResource OutlineActionButton}" Padding="10,5" FontSize="12" Margin="0,0,6,0" Click="BtnRegSelectAll_Click"/>
+                            <Button Content="선택 해제" Style="{StaticResource OutlineActionButton}" Padding="10,5" FontSize="12" Click="BtnRegDeselectAll_Click"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="TxtRegStatus" Text="스캔 대기 중" FontSize="13" FontWeight="Bold" Foreground="#00F0FF" Margin="0,0,16,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="검출 항목: " FontSize="13" Foreground="#8B949E" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="TxtRegTotalCount" Text="0" FontSize="14" FontWeight="ExtraBold" Foreground="#F0F6FC" Margin="0,0,14,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="선택됨: " FontSize="13" Foreground="#8B949E" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="TxtRegSelectedCount" Text="0" FontSize="14" FontWeight="ExtraBold" Foreground="#00E5A3" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Registry DataGrid -->
+                <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Padding="10">
+                    <DataGrid x:Name="DgRegistry"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              HeadersVisibility="Column"
+                              GridLinesVisibility="Horizontal"
+                              HorizontalGridLinesBrush="#26FFFFFF"
+                              Background="#880E1420"
+                              RowBackground="#880E1420"
+                              AlternatingRowBackground="#AA131B2A"
+                              Foreground="#F0F6FC"
+                              BorderThickness="0"
+                              RowHeight="38"
+                              SelectionMode="Single"
+                              SelectionUnit="FullRow">
+                        <DataGrid.Resources>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Background" Value="#1B2538"/>
+                                <Setter Property="Foreground" Value="#8B949E"/>
+                                <Setter Property="FontWeight" Value="Bold"/>
+                                <Setter Property="Padding" Value="10,9"/>
+                                <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                <Setter Property="BorderBrush" Value="#263248"/>
+                            </Style>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="8,0"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="DataGridCell">
+                                            <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#1F304D"/>
+                                        <Setter Property="Foreground" Value="#FFFFFF"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.Resources>
+
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="선택" Width="55">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsChecked, UpdateSourceTrigger=PropertyChanged}"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Click="RegCheckBox_Click"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="분류" Width="130">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{Binding BadgeBackground}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left">
+                                            <TextBlock Text="{Binding Category}" Foreground="{Binding BadgeForeground}" FontSize="11.5" FontWeight="Bold"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTextColumn Header="항목 이름" Binding="{Binding Name}" Width="170" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="데이터 / 대상 경로" Binding="{Binding Data}" Width="240" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="레지스트리 키 경로" Binding="{Binding KeyPath}" Width="*" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="진단 사유" Binding="{Binding Reason}" Width="195" IsReadOnly="True"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+            </Grid>
+
+            <!-- ========================================================== -->
+            <!-- MODULE 4: WinSxS COMPONENT STORE (DISM)                    -->
+            <!-- ========================================================== -->
+            <Grid x:Name="PageWinSxS" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Header -->
+                <StackPanel Grid.Row="0" Margin="0,0,0,16">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="📦" FontSize="21" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="WinSxS 컴포넌트 저장소 분석 &amp; 최적화 (DISM)" FontSize="22" FontWeight="ExtraBold" Foreground="#F0F6FC" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="Windows 업데이트 백업 및 비활성 구성 요소 저장소(WinSxS) 크기를 정밀 분석하고 안전하게 정리합니다." FontSize="13" Foreground="#8B949E" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <!-- 4 Summary Cards -->
+                <UniformGrid Grid.Row="1" Columns="4" Margin="0,0,0,16">
+                    <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,6,0">
+                        <StackPanel>
+                            <TextBlock Text="WinSxS 실제 크기" FontSize="13" Foreground="#8B949E"/>
+                            <TextBlock x:Name="TxtSxsActual" Text="미측정" FontSize="23" FontWeight="ExtraBold" Foreground="#F0F6FC" Margin="0,8,0,2"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource CardBorderStyle}" Margin="6,0,6,0">
+                        <StackPanel>
+                            <TextBlock Text="Windows와 공유됨" FontSize="13" Foreground="#8B949E"/>
+                            <TextBlock x:Name="TxtSxsShared" Text="미측정" FontSize="23" FontWeight="ExtraBold" Foreground="#00F0FF" Margin="0,8,0,2"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource CardBorderStyle}" Margin="6,0,6,0">
+                        <StackPanel>
+                            <TextBlock Text="확보 가능 예상 용량" FontSize="13" Foreground="#8B949E"/>
+                            <TextBlock x:Name="TxtSxsExpected" Text="미측정" FontSize="23" FontWeight="ExtraBold" Foreground="#FFB800" Margin="0,8,0,2"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource CardBorderStyle}" Margin="6,0,0,0">
+                        <StackPanel>
+                            <TextBlock Text="저장소 진단 상태" FontSize="13" Foreground="#8B949E"/>
+                            <TextBlock x:Name="TxtSxsStatusCard" Text="🔍 분석 필요" FontSize="18" FontWeight="ExtraBold" Foreground="#8B949E" Margin="0,10,0,2" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+                </UniformGrid>
+
+                <!-- Action Buttons Bar -->
+                <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Padding="16,12" Margin="0,0,0,14">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="BtnSxsAnalyze" Style="{StaticResource NeonActionButton}" Content="🔍 저장소 분석 (Analyze)" Margin="0,0,10,0" Click="BtnSxsAnalyze_Click"/>
+                            <Button x:Name="BtnSxsCleanup" Style="{StaticResource OutlineActionButton}" BorderBrush="#00E5A3" Foreground="#00E5A3" Content="🧹 일반 정리 (Cleanup)" Margin="0,0,10,0" Click="BtnSxsCleanup_Click"/>
+                            <Button x:Name="BtnSxsResetBase" Style="{StaticResource OutlineActionButton}" BorderBrush="#FFB800" Foreground="#FFB800" Content="🔥 심층 정리 (ResetBase)" Margin="0,0,10,0" Click="BtnSxsResetBase_Click"/>
+                            <Button x:Name="BtnSxsCancel" Style="{StaticResource OutlineActionButton}" Content="🛑 중지" IsEnabled="False" Click="BtnSxsCancel_Click"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" x:Name="BtnSxsSaveLog" Style="{StaticResource OutlineActionButton}" Content="💾 상세 로그 저장" VerticalAlignment="Center" Click="BtnSxsSaveLog_Click"/>
+                    </Grid>
+                </Border>
+
+                <!-- DISM Progress & RichTextBox Log -->
+                <Border Grid.Row="3" Style="{StaticResource CardBorderStyle}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="⚙️" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="DISM 실시간 출력 콘솔" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" x:Name="TxtSxsProgressStatus" Text="대기 중..." FontSize="12.5" Foreground="#00F0FF" VerticalAlignment="Center"/>
+                        </Grid>
+
+                        <ProgressBar Grid.Row="1" x:Name="PbSxs" Height="8" Minimum="0" Maximum="100" Value="0"
+                                     Background="#0B0F17" Foreground="#00E5A3" BorderThickness="0" Margin="0,0,0,12"/>
+
+                        <RichTextBox Grid.Row="2" x:Name="RtbSxsLog"
+                                     Background="#990B0F17"
+                                     Foreground="#C9D1D9"
+                                     BorderBrush="#33FFFFFF"
+                                     BorderThickness="1"
+                                     FontFamily="Consolas, Malgun Gothic"
+                                     FontSize="12.5"
+                                     IsReadOnly="True"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Padding="10">
+                            <FlowDocument LineHeight="20"/>
+                        </RichTextBox>
+                    </Grid>
+                </Border>
+            </Grid>
+
+        </Grid>
+    </Grid>
+</Window>
