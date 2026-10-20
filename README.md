@@ -9,6 +9,11 @@
 
 ---
 
+### 🖼️ 스크린샷 (Screenshot)
+
+<img width="1232" height="770" alt="image" src="https://github.com/user-attachments/assets/951db7eb-50f4-4d14-866d-f62e7cd6ddf1" />
+
+
 ### ✨ 주요 기능 (Key Features)
 
 1. **📊 대시보드 & 원클릭 RAM 메모리 부스트**
