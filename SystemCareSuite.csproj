@@ -14,7 +14,7 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <Title>SystemCareSuite</Title>
     <Product>SystemCareSuite - All-in-One Windows Care Center</Product>
     <Platforms>AnyCPU;x64</Platforms>

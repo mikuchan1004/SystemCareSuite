@@ -29,6 +29,7 @@ namespace SystemCareSuite
         // Module 4: WinSxS DISM
         private Process? _activeDismProcess;
         private string _lastDismMode = string.Empty;
+        private double? _lastActualSizeMb; // 마지막 분석 시 "실제 크기"(MB) — 정리 전/후 비교용
         private readonly StringBuilder _dismLogBuffer = new();
 
         public MainWindow()
@@ -449,13 +450,15 @@ namespace SystemCareSuite
             BtnSxsCancel.IsEnabled = !idle;
         }
 
-        private async Task RunDismAsync(string arguments, string jobTitle)
+        // DISM 실행 후 종료 코드를 반환합니다. (0 = 성공, 3010 = 재부팅 필요, 그 외 = 실패, -1 = 실행 불가/중지)
+        private async Task<int> RunDismAsync(string arguments, string jobTitle)
         {
             SetSxsButtonsState(idle: false);
             PbSxs.Value = 0;
             TxtSxsProgressStatus.Text = $"{jobTitle} 준비 중... (0%)";
             AppendSxsLog($"🚀 [{jobTitle}] 작업을 시작합니다. (dism.exe {arguments})", Brushes.DeepSkyBlue);
             _dismLogBuffer.Clear();
+            int exitCode = -1;
 
             await Task.Run(() =>
             {
@@ -467,8 +470,21 @@ namespace SystemCareSuite
                     proc.StartInfo.Arguments = arguments;
                     proc.StartInfo.UseShellExecute = false;
                     proc.StartInfo.RedirectStandardOutput = true;
+                    proc.StartInfo.RedirectStandardError = true;
                     proc.StartInfo.CreateNoWindow = true;
                     proc.StartInfo.StandardOutputEncoding = Encoding.GetEncoding("euc-kr");
+                    proc.StartInfo.StandardErrorEncoding = Encoding.GetEncoding("euc-kr");
+
+                    // 오류 출력(stderr)도 놓치지 않고 빨간색으로 표시
+                    proc.ErrorDataReceived += (_, e) =>
+                    {
+                        if (string.IsNullOrWhiteSpace(e.Data)) return;
+                        lock (_dismLogBuffer)
+                        {
+                            _dismLogBuffer.AppendLine(e.Data);
+                        }
+                        AppendSxsLog($"⚠️ {e.Data.Trim()}", Brushes.Tomato);
+                    };
 
                     proc.OutputDataReceived += (_, e) =>
                     {
@@ -500,7 +516,9 @@ namespace SystemCareSuite
 
                     proc.Start();
                     proc.BeginOutputReadLine();
+                    proc.BeginErrorReadLine();
                     proc.WaitForExit();
+                    exitCode = proc.ExitCode;
                 }
                 catch (Exception ex)
                 {
@@ -512,24 +530,45 @@ namespace SystemCareSuite
                 }
             });
 
+            // 종료 코드에 따라 성공/재부팅 필요/실패를 명확히 안내
+            if (exitCode == 0)
+            {
+                AppendSxsLog($"✅ [{jobTitle}] DISM이 정상 종료되었습니다. (종료 코드 0)", Brushes.SpringGreen);
+            }
+            else if (exitCode == 3010)
+            {
+                AppendSxsLog($"🔄 [{jobTitle}] 작업은 끝났지만 재부팅이 필요합니다. (종료 코드 3010) PC를 재시작하면 정리가 마무리됩니다.", Brushes.Gold);
+            }
+            else if (exitCode == -1)
+            {
+                AppendSxsLog($"❌ [{jobTitle}] DISM이 정상적으로 끝나지 않았습니다. (실행 오류 또는 사용자 중지)", Brushes.Tomato);
+            }
+            else
+            {
+                AppendSxsLog($"❌ [{jobTitle}] DISM 작업이 실패했습니다. (종료 코드 {exitCode} / 0x{exitCode:X8}) 위의 오류 메시지를 확인하세요. 재부팅 후 다시 시도하면 해결되는 경우가 많습니다.", Brushes.Tomato);
+            }
+
             PbSxs.Value = 100;
             TxtSxsProgressStatus.Text = "대기 중";
             SetSxsButtonsState(idle: true);
+            return exitCode;
         }
 
-        private void ParseDismOutput(string fullOutput)
+        // DISM 분석 결과를 화면 카드에 그대로 반영하고, "실제 크기"를 MB 단위로 반환합니다. (찾지 못하면 null)
+        private double? ParseDismOutput(string fullOutput)
         {
             var sizeRegex = DismSizeRegex();
             string[] lines = fullOutput.Split([Environment.NewLine, "\n"], StringSplitOptions.RemoveEmptyEntries);
+            double? actualMb = null;
 
             foreach (string line in lines)
             {
                 if (line.Contains("구성 요소 저장소 정리 권장"))
                 {
+                    // DISM이 알려준 권장 여부를 그대로 표시 (임의 고정 표시 제거)
                     bool recommended = line.Contains('예') || line.Contains("Yes", StringComparison.OrdinalIgnoreCase);
-                    bool isTiny = TxtSxsExpected.Text.Contains("0.00") || TxtSxsExpected.Text.StartsWith("0 ");
 
-                    if (_lastDismMode == "ResetBase" || !recommended || isTiny)
+                    if (!recommended)
                     {
                         TxtSxsStatusCard.Text = "✅ 아주 깨끗한 상태";
                         TxtSxsStatusCard.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE5, 0xA3));
@@ -549,28 +588,99 @@ namespace SystemCareSuite
                 string unit = m.Groups["unit"].Value.Trim();
 
                 if (line.Contains("실제 크기"))
+                {
                     TxtSxsActual.Text = $"{size} {unit}";
+                    actualMb = ToMegabytes(size, unit);
+                }
                 else if (line.Contains("Windows와 공유됨"))
                     TxtSxsShared.Text = $"{size} {unit}";
                 else if (line.Contains("백업 및 기능 사용 안 함"))
-                    TxtSxsExpected.Text = string.IsNullOrEmpty(_lastDismMode) ? $"{size} {unit}" : "0 MB";
+                    TxtSxsExpected.Text = $"{size} {unit}"; // DISM이 알려준 실제 값을 항상 표시
             }
+
+            return actualMb;
+        }
+
+        private static double? ToMegabytes(string size, string unit)
+        {
+            if (!double.TryParse(size, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v))
+                return null;
+
+            return unit.ToUpperInvariant() switch
+            {
+                "GB" => v * 1024,
+                "MB" => v,
+                "KB" => v / 1024,
+                "BYTES" => v / 1024 / 1024,
+                _ => null
+            };
+        }
+
+        private static string FormatMb(double mb) =>
+            Math.Abs(mb) >= 1024 ? $"{mb / 1024:F2} GB" : $"{mb:F0} MB";
+
+        // 저장소 분석을 실행하고 "실제 크기"(MB)를 반환
+        private async Task<double?> AnalyzeSxsAsync()
+        {
+            int code = await RunDismAsync("/Online /Cleanup-Image /AnalyzeComponentStore", "WinSxS 저장소 분석");
+            double? actualMb = ParseDismOutput(_dismLogBuffer.ToString());
+            if (code == 0)
+                AppendSxsLog("✅ 구성 요소 저장소 분석이 완료되었습니다.", Brushes.SpringGreen);
+            if (actualMb.HasValue)
+                _lastActualSizeMb = actualMb;
+            _lastDismMode = string.Empty;
+            return actualMb;
         }
 
         private async void BtnSxsAnalyze_Click(object sender, RoutedEventArgs e)
         {
-            await RunDismAsync("/Online /Cleanup-Image /AnalyzeComponentStore", "WinSxS 저장소 분석");
-            ParseDismOutput(_dismLogBuffer.ToString());
-            AppendSxsLog("✅ 구성 요소 저장소 분석이 완료되었습니다.", Brushes.SpringGreen);
-            _lastDismMode = string.Empty;
+            await AnalyzeSxsAsync();
+        }
+
+        // 정리 실행 → 재분석 → 정리 전/후 실제 크기를 비교해 결과를 알려줌
+        private async Task RunCleanupAndCompareAsync(string arguments, string jobTitle)
+        {
+            double? beforeMb = _lastActualSizeMb;
+            string mode = _lastDismMode; // 재분석 과정에서 값이 초기화되므로 미리 보관
+            int code = await RunDismAsync(arguments, jobTitle);
+
+            // 작업이 정상 종료(0)되었거나 재부팅 필요(3010) 상태인 경우에만 재분석을 진행
+            if (code != 0 && code != 3010)
+                return;
+
+            AppendSxsLog("🔍 정리 결과 확인을 위해 최신 상태를 다시 분석합니다...", Brushes.Gold);
+            double? afterMb = await AnalyzeSxsAsync();
+
+            if (beforeMb.HasValue && afterMb.HasValue)
+            {
+                double freed = beforeMb.Value - afterMb.Value;
+                if (freed >= 1)
+                    AppendSxsLog($"🎉 정리 결과: {FormatMb(beforeMb.Value)} → {FormatMb(afterMb.Value)} (약 {FormatMb(freed)} 확보)", Brushes.SpringGreen);
+                else
+                {
+                    AppendSxsLog($"ℹ️ 정리 결과: {FormatMb(beforeMb.Value)} → {FormatMb(afterMb.Value)} (변화 없음)", Brushes.Orange);
+                    if (mode == "ResetBase")
+                    {
+                        // 심층 정리까지 했는데도 변화가 없는 경우: 사용자가 헷갈리지 않도록 안내
+                        AppendSxsLog("💡 안내: 심층 정리까지 마쳤는데도 용량이 그대로라면, 남은 용량은 Windows가 업데이트·복구를 위해 꼭 보관하는 파일입니다.", Brushes.DeepSkyBlue);
+                        AppendSxsLog("   더 줄일 수 있는 용량이 거의 없는 정상 상태이므로 추가 정리는 필요하지 않습니다. ('정리 권장: 예' 표시가 계속 남아 있어도 괜찮습니다.)", Brushes.DeepSkyBlue);
+                    }
+                    else
+                    {
+                        AppendSxsLog("💡 안내: 일반 정리로 줄일 수 있는 용량이 더 없습니다. 더 줄이고 싶다면 '심층 정리(ResetBase)'를 시도해 보세요.", Brushes.DeepSkyBlue);
+                    }
+                }
+            }
+            else if (code == 0 || code == 3010)
+            {
+                AppendSxsLog("ℹ️ 정리 전 분석 기록이 없어 용량 비교는 생략했습니다. (다음부터는 '저장소 분석' 후 정리하면 전/후 비교가 표시됩니다.)", Brushes.Orange);
+            }
         }
 
         private async void BtnSxsCleanup_Click(object sender, RoutedEventArgs e)
         {
             _lastDismMode = "Cleanup";
-            await RunDismAsync("/Online /Cleanup-Image /StartComponentCleanup", "WinSxS 일반 정리");
-            AppendSxsLog("✨ 일반 정리가 완료되었습니다. 최신 상태를 다시 분석합니다...", Brushes.Gold);
-            BtnSxsAnalyze_Click(sender, e);
+            await RunCleanupAndCompareAsync("/Online /Cleanup-Image /StartComponentCleanup", "WinSxS 일반 정리");
         }
 
         private async void BtnSxsResetBase_Click(object sender, RoutedEventArgs e)
@@ -580,9 +690,7 @@ namespace SystemCareSuite
                 return;
 
             _lastDismMode = "ResetBase";
-            await RunDismAsync("/Online /Cleanup-Image /StartComponentCleanup /ResetBase", "WinSxS 심층 정리 (ResetBase)");
-            AppendSxsLog("🔥 심층 정리(ResetBase)가 완료되었습니다. 최신 상태를 다시 분석합니다...", Brushes.Gold);
-            BtnSxsAnalyze_Click(sender, e);
+            await RunCleanupAndCompareAsync("/Online /Cleanup-Image /StartComponentCleanup /ResetBase", "WinSxS 심층 정리 (ResetBase)");
         }
 
         private void BtnSxsCancel_Click(object sender, RoutedEventArgs e)
