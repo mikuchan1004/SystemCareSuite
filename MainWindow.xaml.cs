@@ -41,6 +41,12 @@ namespace SystemCareSuite
 
         private void InitializeModules()
         {
+            var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            if (ver != null)
+            {
+                TxtSidebarVersion.Text = $"v{ver.Major}.{ver.Minor}.{ver.Build} · .NET 8.0 Portable";
+            }
+
             TxtCoreCount.Text = $"{Environment.ProcessorCount} Threads";
 
             foreach (var target in CleanerService.CreateDefaultTargets())
