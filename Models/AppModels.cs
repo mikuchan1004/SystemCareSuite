@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Media;
 
@@ -118,6 +119,78 @@ namespace SystemCareSuite.Models
             "MUI 캐시" => new SolidColorBrush(Color.FromRgb(255, 184, 0)),
             "확장자 연결" => new SolidColorBrush(Color.FromRgb(189, 147, 249)),
             "정상 시작앱" => new SolidColorBrush(Color.FromRgb(88, 166, 255)),
+            _ => new SolidColorBrush(Color.FromRgb(201, 209, 217))
+        };
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged([CallerMemberName] string? name = null)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+
+    public class RamExclusionItem : INotifyPropertyChanged
+    {
+        private bool _isEnabled = true;
+        private string _processName = string.Empty;
+        private string _displayName = string.Empty;
+
+        public string ProcessName
+        {
+            get => _processName;
+            set { _processName = value; OnPropertyChanged(); }
+        }
+
+        public string DisplayName
+        {
+            get => string.IsNullOrWhiteSpace(_displayName) ? _processName : _displayName;
+            set { _displayName = value; OnPropertyChanged(); }
+        }
+
+        public bool IsEnabled
+        {
+            get => _isEnabled;
+            set { _isEnabled = value; OnPropertyChanged(); }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged([CallerMemberName] string? name = null)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+
+    public class CleanerFileItem : INotifyPropertyChanged
+    {
+        private bool _isSelected = true;
+
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set { _isSelected = value; OnPropertyChanged(); }
+        }
+
+        public string Category { get; set; } = string.Empty;
+        public string TargetId { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
+        public string FullPath { get; set; } = string.Empty;
+        public long FileSizeBytes { get; set; }
+        public string FileSizeText => CleanerTargetItem.FormatBytes(FileSizeBytes);
+        public string DirectoryPath => Path.GetDirectoryName(FullPath) ?? string.Empty;
+
+        public Brush CategoryBrush => Category switch
+        {
+            "사용자 임시" or "시스템 임시" => new SolidColorBrush(Color.FromArgb(45, 0, 240, 255)),
+            "프리패치" => new SolidColorBrush(Color.FromArgb(45, 0, 229, 163)),
+            "업데이트 캐시" or "배달 최적화" => new SolidColorBrush(Color.FromArgb(45, 255, 184, 0)),
+            "디스코드 캐시" => new SolidColorBrush(Color.FromArgb(45, 189, 147, 249)),
+            "개발 캐시" => new SolidColorBrush(Color.FromArgb(45, 255, 77, 109)),
+            _ => new SolidColorBrush(Color.FromArgb(45, 139, 148, 158))
+        };
+
+        public Brush CategoryForeground => Category switch
+        {
+            "사용자 임시" or "시스템 임시" => new SolidColorBrush(Color.FromRgb(0, 240, 255)),
+            "프리패치" => new SolidColorBrush(Color.FromRgb(0, 229, 163)),
+            "업데이트 캐시" or "배달 최적화" => new SolidColorBrush(Color.FromRgb(255, 184, 0)),
+            "디스코드 캐시" => new SolidColorBrush(Color.FromRgb(189, 147, 249)),
+            "개발 캐시" => new SolidColorBrush(Color.FromRgb(255, 77, 109)),
             _ => new SolidColorBrush(Color.FromRgb(201, 209, 217))
         };
 

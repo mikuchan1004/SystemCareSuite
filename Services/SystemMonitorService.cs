@@ -153,10 +153,26 @@ namespace SystemCareSuite.Services
             return list;
         }
 
-        public (double FreedMb, int OptimizedCount) OptimizeRam()
+        public (double FreedMb, int OptimizedCount, int SkippedCount) OptimizeRam(IEnumerable<string>? excludedProcesses = null)
         {
             var before = GetRamStatus();
             int count = 0;
+            int skipped = 0;
+
+            var excludedSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (excludedProcesses != null)
+            {
+                foreach (var name in excludedProcesses)
+                {
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        string cleanName = name.Trim();
+                        if (cleanName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                            cleanName = Path.GetFileNameWithoutExtension(cleanName);
+                        excludedSet.Add(cleanName);
+                    }
+                }
+            }
 
             foreach (var proc in Process.GetProcesses())
             {
@@ -164,6 +180,12 @@ namespace SystemCareSuite.Services
                 {
                     if (!proc.HasExited && proc.Handle != IntPtr.Zero)
                     {
+                        if (excludedSet.Contains(proc.ProcessName))
+                        {
+                            skipped++;
+                            continue;
+                        }
+
                         if (EmptyWorkingSet(proc.Handle) != 0)
                             count++;
                     }
@@ -180,7 +202,7 @@ namespace SystemCareSuite.Services
 
             var after = GetRamStatus();
             double freedMb = Math.Max(12.0, (after.FreeGb - before.FreeGb) * 1024.0);
-            return (freedMb, count);
+            return (freedMb, count, skipped);
         }
 
         public void Dispose()

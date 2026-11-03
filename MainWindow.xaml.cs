@@ -22,6 +22,7 @@ namespace SystemCareSuite
 
         // Module 2: Cleaner
         private readonly ObservableCollection<CleanerTargetItem> _cleanerTargets = [];
+        private readonly List<CleanerFileItem> _cleanerMasterFiles = [];
 
         // Module 3: Registry
         private List<RegistryItem> _registryMasterList = [];
@@ -162,17 +163,33 @@ namespace SystemCareSuite
 
         private void BtnRefreshProcs_Click(object sender, RoutedEventArgs e) => RefreshTopProcesses();
 
+        private void BtnRamExclusionSettings_Click(object sender, RoutedEventArgs e)
+        {
+            var win = new RamExclusionWindow
+            {
+                Owner = this
+            };
+            win.ShowDialog();
+        }
+
         private async void BtnRamBoost_Click(object sender, RoutedEventArgs e)
         {
             BtnQuickRamBoost.IsEnabled = false;
             BtnQuickRamBoost.Content = "⚡ 메모리 최적화 중...";
 
-            var (freedMb, count) = await Task.Run(() => _monitorService.OptimizeRam());
+            // 제외(화이트리스트) 목록 중 활성화된 항목 로드
+            var exclusions = RamExclusionService.LoadExclusions()
+                .Where(x => x.IsEnabled)
+                .Select(x => x.ProcessName)
+                .ToList();
+
+            var (freedMb, count, skipped) = await Task.Run(() => _monitorService.OptimizeRam(exclusions));
 
             UpdateDashboardMetrics();
             RefreshTopProcesses();
 
-            TxtRamBoostResult.Text = $"✅ {count}개 프로세스 정리 (약 {freedMb:F0} MB 확보)";
+            string skippedMsg = skipped > 0 ? $", 제외 {skipped}개" : string.Empty;
+            TxtRamBoostResult.Text = $"✅ {count}개 프로세스 정리 (약 {freedMb:F0} MB 확보{skippedMsg})";
             BtnQuickRamBoost.Content = "⚡ 원클릭 RAM 메모리 부스트";
             BtnQuickRamBoost.IsEnabled = true;
         }
@@ -180,6 +197,15 @@ namespace SystemCareSuite
         // =====================================================================
         // MODULE 2: SYSTEM & DEV CLEANER
         // =====================================================================
+        private void CleanerSubTab_Checked(object sender, RoutedEventArgs e)
+        {
+            if (ViewCleanerFiles == null || ViewCleanerTargets == null || ViewCleanerLog == null) return;
+
+            ViewCleanerFiles.Visibility = RbCleanerTabFiles.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+            ViewCleanerTargets.Visibility = RbCleanerTabTargets.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+            ViewCleanerLog.Visibility = RbCleanerTabLog.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        }
+
         private void BtnBrowseDevRoot_Click(object sender, RoutedEventArgs e)
         {
             var dlg = new OpenFolderDialog
@@ -192,14 +218,81 @@ namespace SystemCareSuite
             }
         }
 
-        private void BtnSelectAllCleaner_Click(object sender, RoutedEventArgs e)
+        private void CbCleanerFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            foreach (var item in _cleanerTargets) item.IsSelected = true;
+            ApplyCleanerFilter();
         }
 
-        private void BtnDeselectAllCleaner_Click(object sender, RoutedEventArgs e)
+        private void TxtCleanerSearch_TextChanged(object sender, TextChangedEventArgs e)
         {
-            foreach (var item in _cleanerTargets) item.IsSelected = false;
+            ApplyCleanerFilter();
+        }
+
+        private void ApplyCleanerFilter()
+        {
+            if (DgCleanerFiles == null) return;
+
+            string selectedCat = (CbCleanerFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "전체 분류";
+            string search = TxtCleanerSearch?.Text?.Trim() ?? string.Empty;
+
+            var filtered = _cleanerMasterFiles.AsEnumerable();
+
+            if (selectedCat != "전체 분류")
+            {
+                filtered = filtered.Where(x => x.Category.Equals(selectedCat, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrEmpty(search))
+            {
+                filtered = filtered.Where(x => x.FileName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                                               x.FullPath.Contains(search, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var list = filtered.ToList();
+            DgCleanerFiles.ItemsSource = list;
+
+            if (TxtCleanerFilesEmptyGuide != null)
+            {
+                TxtCleanerFilesEmptyGuide.Visibility = _cleanerMasterFiles.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            UpdateCleanerStats();
+        }
+
+        private void CleanerFileCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            UpdateCleanerStats();
+        }
+
+        private void BtnSelectAllCleanerFiles_Click(object sender, RoutedEventArgs e)
+        {
+            if (DgCleanerFiles.ItemsSource is IEnumerable<CleanerFileItem> currentList)
+            {
+                foreach (var item in currentList) item.IsSelected = true;
+            }
+            UpdateCleanerStats();
+        }
+
+        private void BtnDeselectAllCleanerFiles_Click(object sender, RoutedEventArgs e)
+        {
+            if (DgCleanerFiles.ItemsSource is IEnumerable<CleanerFileItem> currentList)
+            {
+                foreach (var item in currentList) item.IsSelected = false;
+            }
+            UpdateCleanerStats();
+        }
+
+        private void UpdateCleanerStats()
+        {
+            if (TxtCleanerTotalCount == null) return;
+
+            int total = _cleanerMasterFiles.Count;
+            int selected = _cleanerMasterFiles.Count(x => x.IsSelected);
+            long selectedBytes = _cleanerMasterFiles.Where(x => x.IsSelected).Sum(x => x.FileSizeBytes);
+
+            TxtCleanerTotalCount.Text = $"{total:N0}개";
+            TxtCleanerSelectedCount.Text = $"{selected:N0}개";
+            TxtCleanerEstimatedTotal.Text = CleanerTargetItem.FormatBytes(selectedBytes);
         }
 
         private async void BtnScanCleaner_Click(object sender, RoutedEventArgs e)
@@ -207,37 +300,50 @@ namespace SystemCareSuite
             BtnScanCleaner.IsEnabled = false;
             BtnRunCleaner.IsEnabled = false;
             PbCleaner.Value = 0;
-            TxtCleanerStatus.Text = "사전 용량 스캔 중...";
-            TxtCleanerLog.Text = $"[{DateTime.Now:HH:mm:ss}] 선택한 항목의 예상 정리 용량을 계산합니다...\n";
+            TxtCleanerStatus.Text = "파일 정밀 스캔 중...";
+            TxtCleanerLogStatus.Text = "스캔 중...";
+            TxtCleanerLog.Text = $"[{DateTime.Now:HH:mm:ss}] 파일 정밀 스캔을 시작합니다...\n";
 
             string devRoot = TxtDevRootPath.Text.Trim();
-            var targets = _cleanerTargets.ToList();
-            long totalEstimated = 0;
+            var activeTargetIds = _cleanerTargets.Where(x => x.IsSelected).Select(x => x.Id).ToList();
 
-            for (int i = 0; i < targets.Count; i++)
+            if (activeTargetIds.Count == 0)
             {
-                var t = targets[i];
-                if (!t.IsSelected)
-                {
-                    t.EstimatedBytes = 0;
-                    t.StatusText = "선택 제외됨";
-                    continue;
-                }
-
-                t.StatusText = "스캔 중...";
-                long bytes = await Task.Run(() => CleanerService.ScanTargetBytes(t.Id, devRoot));
-                t.EstimatedBytes = bytes;
-                t.StatusText = bytes > 0 ? "정리 가능" : "깨끗함";
-                totalEstimated += bytes;
-
-                PbCleaner.Value = ((i + 1) / (double)targets.Count) * 100.0;
-                TxtCleanerLog.Text += $" • [{t.Title}] -> {CleanerTargetItem.FormatBytes(bytes)}\n";
-                SvCleanerLog.ScrollToBottom();
+                // 선택된 범주가 없으면 전체 활성화
+                foreach (var t in _cleanerTargets) t.IsSelected = true;
+                activeTargetIds = _cleanerTargets.Select(x => x.Id).ToList();
             }
 
-            TxtCleanerEstimatedTotal.Text = CleanerTargetItem.FormatBytes(totalEstimated);
-            TxtCleanerStatus.Text = "사전 스캔 완료";
-            TxtCleanerLog.Text += $"\n✅ 스캔 완료! 예상 확보 가능 총 용량: {CleanerTargetItem.FormatBytes(totalEstimated)}\n";
+            var progress = new Progress<string>(msg =>
+            {
+                TxtCleanerLog.Text += $"{msg}\n";
+                SvCleanerLog.ScrollToBottom();
+            });
+
+            var scannedFiles = await Task.Run(() => CleanerService.ScanDetailedFiles(activeTargetIds, devRoot, progress));
+
+            // 카테고리별 요약 크기 업데이트
+            foreach (var t in _cleanerTargets)
+            {
+                long targetBytes = scannedFiles.Where(x => x.TargetId == t.Id).Sum(x => x.FileSizeBytes);
+                t.EstimatedBytes = targetBytes;
+                t.StatusText = targetBytes > 0 ? $"{scannedFiles.Count(x => x.TargetId == t.Id):N0}개 파일" : "깨끗함";
+            }
+
+            _cleanerMasterFiles.Clear();
+            _cleanerMasterFiles.AddRange(scannedFiles);
+
+            ApplyCleanerFilter();
+
+            // 스캔 완료 후 파일 목록 탭으로 자동 전환하여 보여주기
+            RbCleanerTabFiles.IsChecked = true;
+
+            long totalBytes = _cleanerMasterFiles.Sum(x => x.FileSizeBytes);
+            string totalSizeText = CleanerTargetItem.FormatBytes(totalBytes);
+
+            TxtCleanerStatus.Text = $"스캔 완료 ({_cleanerMasterFiles.Count:N0}개 발견)";
+            TxtCleanerLogStatus.Text = "스캔 완료";
+            TxtCleanerLog.Text += $"\n✅ 정밀 스캔 완료! 총 {_cleanerMasterFiles.Count:N0}개 파일 ({totalSizeText})\n";
             SvCleanerLog.ScrollToBottom();
 
             BtnScanCleaner.IsEnabled = true;
@@ -246,21 +352,33 @@ namespace SystemCareSuite
 
         private async void BtnRunCleaner_Click(object sender, RoutedEventArgs e)
         {
-            var selected = _cleanerTargets.Where(x => x.IsSelected).ToList();
-            if (selected.Count == 0)
+            var selectedFiles = _cleanerMasterFiles.Where(x => x.IsSelected).ToList();
+            if (selectedFiles.Count == 0)
             {
-                MessageBox.Show("정리할 항목을 하나 이상 체크해 주세요.", "알림", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("삭제할 파일이 선택되지 않았습니다.\n목록에서 지우고 싶은 파일의 체크박스를 확인해 주세요.", "알림", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
+
+            long selectedTotalBytes = selectedFiles.Sum(x => x.FileSizeBytes);
+            string selectedSizeText = CleanerTargetItem.FormatBytes(selectedTotalBytes);
+
+            var confirm = MessageBox.Show(
+                $"선택한 {selectedFiles.Count:N0}개의 파일(약 {selectedSizeText})을 영구 삭제하시겠습니까?\n\n※ 임시/캐시 파일은 삭제 후 복구할 수 없습니다.",
+                "클리너 삭제 확인",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (confirm != MessageBoxResult.Yes) return;
 
             BtnScanCleaner.IsEnabled = false;
             BtnRunCleaner.IsEnabled = false;
             PbCleaner.Value = 0;
-            TxtCleanerStatus.Text = "정리 진행 중...";
-            TxtCleanerLog.Text = $"[{DateTime.Now:HH:mm:ss}] 선택된 {selected.Count}개 카테고리 정리를 시작합니다...\n\n";
+            TxtCleanerStatus.Text = "파일 삭제 진행 중...";
+            TxtCleanerLogStatus.Text = "정리 중...";
 
-            string devRoot = TxtDevRootPath.Text.Trim();
-            long totalFreed = 0;
+            // 실시간 상황을 볼 수 있도록 로그 탭으로 전환
+            RbCleanerTabLog.IsChecked = true;
+            TxtCleanerLog.Text += $"\n[{DateTime.Now:HH:mm:ss}] 선택된 {selectedFiles.Count:N0}개 파일 삭제를 시작합니다...\n";
 
             var progress = new Progress<string>(msg =>
             {
@@ -268,30 +386,43 @@ namespace SystemCareSuite
                 SvCleanerLog.ScrollToBottom();
             });
 
-            for (int i = 0; i < selected.Count; i++)
-            {
-                var item = selected[i];
-                item.StatusText = "정리 중...";
-                long freed = await Task.Run(() => CleanerService.CleanTarget(item.Id, devRoot, progress));
-                totalFreed += freed;
-                item.EstimatedBytes = 0;
-                item.StatusText = $"정리 완료 ({CleanerTargetItem.FormatBytes(freed)})";
+            var (freedBytes, deletedCount, failedCount) = await Task.Run(() => CleanerService.DeleteSelectedFiles(selectedFiles, progress));
 
-                PbCleaner.Value = ((i + 1) / (double)selected.Count) * 100.0;
-                TxtCleanerStatus.Text = $"진행률 {PbCleaner.Value:F0}% ({item.Title})";
+            // 삭제된 파일들을 마스터 목록에서 제거
+            var deletedPathSet = new HashSet<string>(selectedFiles.Select(x => x.FullPath), StringComparer.OrdinalIgnoreCase);
+            _cleanerMasterFiles.RemoveAll(x => deletedPathSet.Contains(x.FullPath) && !File.Exists(x.FullPath));
+
+            // 카테고리별 요약도 갱신
+            foreach (var t in _cleanerTargets)
+            {
+                long remainBytes = _cleanerMasterFiles.Where(x => x.TargetId == t.Id).Sum(x => x.FileSizeBytes);
+                t.EstimatedBytes = remainBytes;
+                t.StatusText = remainBytes > 0 ? $"{_cleanerMasterFiles.Count(x => x.TargetId == t.Id):N0}개 파일" : "정리됨";
             }
 
-            string finalSize = CleanerTargetItem.FormatBytes(totalFreed);
-            TxtCleanerEstimatedTotal.Text = $"확보됨: {finalSize}";
-            TxtCleanerStatus.Text = $"완료 ({finalSize} 확보)";
+            ApplyCleanerFilter();
+
+            string finalSize = CleanerTargetItem.FormatBytes(freedBytes);
+            TxtCleanerStatus.Text = $"정리 완료 ({finalSize} 확보)";
+            TxtCleanerLogStatus.Text = "정리 완료";
             TxtCleanerLog.Text += "\n============================================\n";
-            TxtCleanerLog.Text += $"✨ 최종 확보 용량: {finalSize}\n";
-            TxtCleanerLog.Text += "============================================\n";
+            TxtCleanerLog.Text += $"✨ 최종 정리 완료: {deletedCount:N0}개 삭제, {finalSize} 디스크 공간 확보\n";
+            if (failedCount > 0)
+            {
+                TxtCleanerLog.Text += $"ℹ️ {failedCount:N0}개 파일은 다른 앱에서 사용 중(잠김)이어서 보존되었습니다.\n";
+            }
+            TxtCleanerLog.Text += "============================================\n\n";
             SvCleanerLog.ScrollToBottom();
 
             RefreshDrives();
             BtnScanCleaner.IsEnabled = true;
             BtnRunCleaner.IsEnabled = true;
+
+            MessageBox.Show(
+                $"총 {deletedCount:N0}개의 파일이 성공적으로 삭제되었습니다.\n확보된 디스크 용량: {finalSize}",
+                "정리 완료",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
         }
 
         // =====================================================================
