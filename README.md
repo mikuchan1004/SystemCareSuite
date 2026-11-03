@@ -11,7 +11,7 @@
 
 ### 🖼️ 스크린샷 (Screenshot)
 
-<img width="1484" height="808" alt="image" src="https://github.com/user-attachments/assets/0833b3a5-eb93-4f97-a017-e5837e1d172f" />
+<img width="1478" height="800" alt="image" src="https://github.com/user-attachments/assets/88027ae8-ff3e-4f80-b23f-e5266e172753" />
 
 
 ### ✨ 주요 기능 (Key Features)
