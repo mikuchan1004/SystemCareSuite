@@ -2,6 +2,7 @@
 
 [![Framework](https://img.shields.io/badge/.NET-8.0-512BD4?logo=.net&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/8.0)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/mikuchan1004/SystemCareSuite?color=brightgreen&logo=github)](https://github.com/mikuchan1004/SystemCareSuite/releases/latest)
+[![VirusTotal](https://img.shields.io/badge/VirusTotal-Safe%20%26%20Clean-0066FF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/59f46f533647f7b8129b4892abd7b74c4e8581e77e16553c27c7731b840cf4c7)
 [![Collaborated with Gemini](https://img.shields.io/badge/Collaborated%20with-Gemini-4285F4?logo=google-gemini&logoColor=white)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
