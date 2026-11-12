@@ -624,13 +624,18 @@ namespace SystemCareSuite
                         break;
                     }
 
+                    bool isAnalyze = arguments.Contains("/AnalyzeComponentStore", StringComparison.OrdinalIgnoreCase);
                     var elapsed = DateTime.Now - startTime;
                     _ = Dispatcher.BeginInvoke(() =>
                     {
                         if (lastPercentage >= 0)
                             TxtSxsProgressStatus.Text = $"{jobTitle}: {lastPercentage:F1}% 진행 중... (경과: {elapsed:mm\\:ss})";
                         else
-                            TxtSxsProgressStatus.Text = $"{jobTitle} 분석 및 정리 중... (경과: {elapsed:mm\\:ss})";
+                        {
+                            TxtSxsProgressStatus.Text = isAnalyze
+                                ? $"WinSxS 저장소 상태 분석 중... (경과: {elapsed:mm\\:ss})"
+                                : $"{jobTitle} 진행 중... (경과: {elapsed:mm\\:ss})";
+                        }
                     });
 
                     // 60초마다 새 출력이 없으면 안심 메시지 출력
@@ -638,13 +643,21 @@ namespace SystemCareSuite
                     if (elapsedMinutes > reminderMinute && (DateTime.Now - lastOutputTime).TotalSeconds >= 45)
                     {
                         reminderMinute = elapsedMinutes;
-                        string hint = reminderMinute switch
-                        {
-                            1 => "⏳ [작업 진행 중] Windows 모듈 작업자(TiWorker)가 백그라운드에서 파일 정리를 정상 수행하고 있습니다.",
-                            2 => "⏳ [작업 진행 중] WinSxS 패키지 종속성 검사 및 정리를 계속 진행하고 있습니다.",
-                            3 => "⏳ [작업 진행 중] 수많은 백업 패키지를 압축하고 안전하게 제거 중입니다. 최대 10~20분 소요될 수 있습니다.",
-                            _ => "⏳ [작업 진행 중] 대용량 구성 요소 정리가 안전하게 진행 중입니다. 잠시만 더 기다려 주세요."
-                        };
+                        string hint = isAnalyze
+                            ? reminderMinute switch
+                            {
+                                1 => "⏳ [작업 진행 중] Windows 모듈 작업자(TiWorker)가 WinSxS 저장소 구성 요소를 정밀 검사하고 있습니다.",
+                                2 => "⏳ [작업 진행 중] 패키지 종속성을 확인하고 실제 점유 용량을 정밀 계산 중입니다.",
+                                3 => "⏳ [작업 진행 중] 시스템 저장소 상세 분석 및 정리 권장 여부를 집계 중입니다. 잠시만 기다려 주세요.",
+                                _ => "⏳ [작업 진행 중] WinSxS 저장소 상세 분석 작업이 계속 진행 중입니다. 잠시만 더 기다려 주세요."
+                            }
+                            : reminderMinute switch
+                            {
+                                1 => "⏳ [작업 진행 중] Windows 모듈 작업자(TiWorker)가 백그라운드에서 파일 정리를 정상 수행하고 있습니다.",
+                                2 => "⏳ [작업 진행 중] WinSxS 패키지 종속성 검사 및 정리를 계속 진행하고 있습니다.",
+                                3 => "⏳ [작업 진행 중] 수많은 백업 패키지를 압축하고 안전하게 제거 중입니다. 최대 10~20분 소요될 수 있습니다.",
+                                _ => "⏳ [작업 진행 중] 대용량 구성 요소 정리가 안전하게 진행 중입니다. 잠시만 더 기다려 주세요."
+                            };
                         AppendSxsLog($"{hint} (경과 시간: {elapsed:mm\\:ss})", Brushes.DeepSkyBlue);
                     }
                 }
