@@ -129,7 +129,7 @@
                             <TextBlock Text="관리자 권한 활성화됨" FontSize="12" FontWeight="Bold" Foreground="{StaticResource NeonMintBrush}" VerticalAlignment="Center"/>
                         </StackPanel>
                         <TextBlock x:Name="TxtSidebarUptime" Text="Uptime: 00:00:00" FontSize="12" Foreground="#8B949E" Margin="0,6,0,0"/>
-                        <TextBlock x:Name="TxtSidebarVersion" Text="v1.1.0 · .NET 8.0 Portable" FontSize="11" Foreground="#586574" Margin="0,4,0,0"/>
+                        <TextBlock x:Name="TxtSidebarVersion" Text="v1.1.1 · .NET 8.0 Portable" FontSize="11" Foreground="#586574" Margin="0,4,0,0"/>
                     </StackPanel>
                 </Border>
             </Grid>

@@ -591,81 +591,220 @@ namespace SystemCareSuite
         private async Task<int> RunDismAsync(string arguments, string jobTitle)
         {
             SetSxsButtonsState(idle: false);
+            PbSxs.IsIndeterminate = true;
             PbSxs.Value = 0;
-            TxtSxsProgressStatus.Text = $"{jobTitle} 준비 중... (0%)";
+            DateTime startTime = DateTime.Now;
+            TxtSxsProgressStatus.Text = $"{jobTitle} 준비 중... (00:00)";
             AppendSxsLog($"🚀 [{jobTitle}] 작업을 시작합니다. (dism.exe {arguments})", Brushes.DeepSkyBlue);
             _dismLogBuffer.Clear();
-            int exitCode = -1;
 
-            await Task.Run(() =>
+            if (arguments.Contains("/StartComponentCleanup", StringComparison.OrdinalIgnoreCase))
             {
-                try
-                {
-                    using var proc = new Process();
-                    _activeDismProcess = proc;
-                    proc.StartInfo.FileName = "dism.exe";
-                    proc.StartInfo.Arguments = arguments;
-                    proc.StartInfo.UseShellExecute = false;
-                    proc.StartInfo.RedirectStandardOutput = true;
-                    proc.StartInfo.RedirectStandardError = true;
-                    proc.StartInfo.CreateNoWindow = true;
-                    proc.StartInfo.StandardOutputEncoding = Encoding.GetEncoding("euc-kr");
-                    proc.StartInfo.StandardErrorEncoding = Encoding.GetEncoding("euc-kr");
+                AppendSxsLog("💡 [안내] WinSxS 정리는 시스템 파일 및 수십만 개의 백업 링크를 전수 대조·압축·정리하므로 용량에 따라 5분~20분 이상 소요될 수 있습니다.", Brushes.DeepSkyBlue);
+                AppendSxsLog("💡 초기 2~4분간은 준비 및 의존성 계산 단계로 진행률이 0%에 머무를 수 있습니다. PC가 멈춘 것이 아니니 안심하고 기다려 주세요.", Brushes.DeepSkyBlue);
+            }
 
-                    // 오류 출력(stderr)도 놓치지 않고 빨간색으로 표시
-                    proc.ErrorDataReceived += (_, e) =>
+            int exitCode = -1;
+            using var cts = new CancellationTokenSource();
+            double lastPercentage = -1;
+            DateTime lastOutputTime = DateTime.Now;
+            int reminderMinute = 0;
+
+            // 경과 시간 및 주기적 안심 안내 백그라운드 루프 (1초 주기)
+            var timerTask = Task.Run(async () =>
+            {
+                while (!cts.Token.IsCancellationRequested)
+                {
+                    try
                     {
-                        if (string.IsNullOrWhiteSpace(e.Data)) return;
-                        lock (_dismLogBuffer)
-                        {
-                            _dismLogBuffer.AppendLine(e.Data);
-                        }
-                        AppendSxsLog($"⚠️ {e.Data.Trim()}", Brushes.Tomato);
-                    };
-
-                    proc.OutputDataReceived += (_, e) =>
+                        await Task.Delay(1000, cts.Token);
+                    }
+                    catch (OperationCanceledException)
                     {
-                        if (string.IsNullOrEmpty(e.Data)) return;
-                        lock (_dismLogBuffer)
-                        {
-                            _dismLogBuffer.AppendLine(e.Data);
-                        }
+                        break;
+                    }
 
-                        var m = DismPercentRegex().Match(e.Data);
-                        if (m.Success && double.TryParse(m.Groups["num"].Value, out double pct))
-                        {
-                            Dispatcher.BeginInvoke(() =>
-                            {
-                                PbSxs.Value = pct;
-                                TxtSxsProgressStatus.Text = $"{jobTitle}: {pct:F1}% 진행 중...";
-                            });
-                        }
+                    var elapsed = DateTime.Now - startTime;
+                    _ = Dispatcher.BeginInvoke(() =>
+                    {
+                        if (lastPercentage >= 0)
+                            TxtSxsProgressStatus.Text = $"{jobTitle}: {lastPercentage:F1}% 진행 중... (경과: {elapsed:mm\\:ss})";
+                        else
+                            TxtSxsProgressStatus.Text = $"{jobTitle} 분석 및 정리 중... (경과: {elapsed:mm\\:ss})";
+                    });
 
-                        string trimmed = e.Data.Trim();
-                        if (!string.IsNullOrWhiteSpace(trimmed) &&
-                            !(trimmed.StartsWith('[') && trimmed.Contains('%')) &&
-                            !trimmed.StartsWith("배포 이미지") &&
-                            !trimmed.StartsWith("이미지 버전"))
+                    // 60초마다 새 출력이 없으면 안심 메시지 출력
+                    int elapsedMinutes = (int)elapsed.TotalMinutes;
+                    if (elapsedMinutes > reminderMinute && (DateTime.Now - lastOutputTime).TotalSeconds >= 45)
+                    {
+                        reminderMinute = elapsedMinutes;
+                        string hint = reminderMinute switch
                         {
-                            AppendSxsLog(trimmed);
-                        }
-                    };
-
-                    proc.Start();
-                    proc.BeginOutputReadLine();
-                    proc.BeginErrorReadLine();
-                    proc.WaitForExit();
-                    exitCode = proc.ExitCode;
-                }
-                catch (Exception ex)
-                {
-                    AppendSxsLog($"❌ DISM 실행 오류: {ex.Message}", Brushes.Tomato);
-                }
-                finally
-                {
-                    _activeDismProcess = null;
+                            1 => "⏳ [작업 진행 중] Windows 모듈 작업자(TiWorker)가 백그라운드에서 파일 정리를 정상 수행하고 있습니다.",
+                            2 => "⏳ [작업 진행 중] WinSxS 패키지 종속성 검사 및 정리를 계속 진행하고 있습니다.",
+                            3 => "⏳ [작업 진행 중] 수많은 백업 패키지를 압축하고 안전하게 제거 중입니다. 최대 10~20분 소요될 수 있습니다.",
+                            _ => "⏳ [작업 진행 중] 대용량 구성 요소 정리가 안전하게 진행 중입니다. 잠시만 더 기다려 주세요."
+                        };
+                        AppendSxsLog($"{hint} (경과 시간: {elapsed:mm\\:ss})", Brushes.DeepSkyBlue);
+                    }
                 }
             });
+
+            void ProcessOutputLine(string rawLine)
+            {
+                string trimmed = rawLine.Trim();
+                if (string.IsNullOrWhiteSpace(trimmed)) return;
+
+                lock (_dismLogBuffer)
+                {
+                    _dismLogBuffer.AppendLine(trimmed);
+                }
+
+                var m = DismPercentRegex().Match(trimmed);
+                if (m.Success && double.TryParse(m.Groups["num"].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double pct))
+                {
+                    lastPercentage = pct;
+                    lastOutputTime = DateTime.Now;
+                    _ = Dispatcher.BeginInvoke(() =>
+                    {
+                        if (PbSxs.IsIndeterminate)
+                            PbSxs.IsIndeterminate = false;
+                        PbSxs.Value = pct;
+                        var elapsed = DateTime.Now - startTime;
+                        TxtSxsProgressStatus.Text = $"{jobTitle}: {pct:F1}% 진행 중... (경과: {elapsed:mm\\:ss})";
+                    });
+                }
+
+                if (!(trimmed.StartsWith('[') && trimmed.Contains('%')) &&
+                    !trimmed.StartsWith("배포 이미지") &&
+                    !trimmed.StartsWith("이미지 버전"))
+                {
+                    lastOutputTime = DateTime.Now;
+                    AppendSxsLog(trimmed);
+                }
+            }
+
+            void ProcessErrorLine(string rawLine)
+            {
+                string trimmed = rawLine.Trim();
+                if (string.IsNullOrWhiteSpace(trimmed)) return;
+
+                lock (_dismLogBuffer)
+                {
+                    _dismLogBuffer.AppendLine(trimmed);
+                }
+                lastOutputTime = DateTime.Now;
+                AppendSxsLog($"⚠️ {trimmed}", Brushes.Tomato);
+            }
+
+            try
+            {
+                await Task.Run(async () =>
+                {
+                    try
+                    {
+                        using var proc = new Process();
+                        _activeDismProcess = proc;
+                        proc.StartInfo.FileName = "dism.exe";
+                        proc.StartInfo.Arguments = arguments;
+                        proc.StartInfo.UseShellExecute = false;
+                        proc.StartInfo.RedirectStandardOutput = true;
+                        proc.StartInfo.RedirectStandardError = true;
+                        proc.StartInfo.CreateNoWindow = true;
+                        proc.StartInfo.StandardOutputEncoding = Encoding.GetEncoding("euc-kr");
+                        proc.StartInfo.StandardErrorEncoding = Encoding.GetEncoding("euc-kr");
+
+                        proc.Start();
+
+                        var stdoutTask = Task.Run(async () =>
+                        {
+                            char[] buffer = new char[512];
+                            var sb = new StringBuilder();
+                            var reader = proc.StandardOutput;
+                            while (!cts.Token.IsCancellationRequested)
+                            {
+                                int read = await reader.ReadAsync(buffer, 0, buffer.Length);
+                                if (read <= 0) break;
+                                for (int i = 0; i < read; i++)
+                                {
+                                    char c = buffer[i];
+                                    if (c == '\r' || c == '\n')
+                                    {
+                                        if (sb.Length > 0)
+                                        {
+                                            string line = sb.ToString();
+                                            sb.Clear();
+                                            ProcessOutputLine(line);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        sb.Append(c);
+                                    }
+                                }
+                            }
+                            if (sb.Length > 0)
+                            {
+                                ProcessOutputLine(sb.ToString());
+                            }
+                        });
+
+                        var stderrTask = Task.Run(async () =>
+                        {
+                            char[] buffer = new char[512];
+                            var sb = new StringBuilder();
+                            var reader = proc.StandardError;
+                            while (!cts.Token.IsCancellationRequested)
+                            {
+                                int read = await reader.ReadAsync(buffer, 0, buffer.Length);
+                                if (read <= 0) break;
+                                for (int i = 0; i < read; i++)
+                                {
+                                    char c = buffer[i];
+                                    if (c == '\r' || c == '\n')
+                                    {
+                                        if (sb.Length > 0)
+                                        {
+                                            string errLine = sb.ToString();
+                                            sb.Clear();
+                                            ProcessErrorLine(errLine);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        sb.Append(c);
+                                    }
+                                }
+                            }
+                            if (sb.Length > 0)
+                            {
+                                ProcessErrorLine(sb.ToString());
+                            }
+                        });
+
+                        await proc.WaitForExitAsync(cts.Token);
+                        await Task.WhenAll(stdoutTask, stderrTask);
+                        exitCode = proc.ExitCode;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        exitCode = -1;
+                    }
+                    catch (Exception ex)
+                    {
+                        AppendSxsLog($"❌ DISM 실행 오류: {ex.Message}", Brushes.Tomato);
+                    }
+                    finally
+                    {
+                        _activeDismProcess = null;
+                    }
+                });
+            }
+            finally
+            {
+                cts.Cancel();
+                try { await timerTask; } catch { }
+            }
 
             // 종료 코드에 따라 성공/재부팅 필요/실패를 명확히 안내
             if (exitCode == 0)
@@ -685,7 +824,8 @@ namespace SystemCareSuite
                 AppendSxsLog($"❌ [{jobTitle}] DISM 작업이 실패했습니다. (종료 코드 {exitCode} / 0x{exitCode:X8}) 위의 오류 메시지를 확인하세요. 재부팅 후 다시 시도하면 해결되는 경우가 많습니다.", Brushes.Tomato);
             }
 
-            PbSxs.Value = 100;
+            PbSxs.IsIndeterminate = false;
+            PbSxs.Value = (exitCode == 0 ? 100 : 0);
             TxtSxsProgressStatus.Text = "대기 중";
             SetSxsButtonsState(idle: true);
             return exitCode;
@@ -838,6 +978,7 @@ namespace SystemCareSuite
                 {
                     _activeDismProcess.Kill(entireProcessTree: true);
                     AppendSxsLog("🛑 사용자에 의해 DISM 작업이 중지되었습니다.", Brushes.OrangeRed);
+                    AppendSxsLog("ℹ️ Windows 시스템 모듈이 백그라운드 작업을 안전하게 롤백/정리하는 데 수십 초 정도 소요될 수 있습니다.", Brushes.Orange);
                 }
             }
             catch (Exception ex)
