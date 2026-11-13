@@ -2,7 +2,7 @@
 
 [![Framework](https://img.shields.io/badge/.NET-8.0-512BD4?logo=.net&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/8.0)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/mikuchan1004/SystemCareSuite?color=brightgreen&logo=github)](https://github.com/mikuchan1004/SystemCareSuite/releases/latest)
-[![VirusTotal](https://img.shields.io/badge/VirusTotal-Safe%20%26%20Clean-0066FF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/59f46f533647f7b8129b4892abd7b74c4e8581e77e16553c27c7731b840cf4c7)
+[![VirusTotal](https://img.shields.io/badge/VirusTotal-Safe%20%26%20Clean-0066FF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/f52ea6d3a2eeb420ac2541d43313f7d260b95948772d618d736613ce5e5ebd21)
 [![Collaborated with Gemini](https://img.shields.io/badge/Collaborated%20with-Gemini-4285F4?logo=google-gemini&logoColor=white)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -12,7 +12,7 @@
 
 ### 🖼️ 스크린샷 (Screenshot)
 
-<img width="1478" height="806" alt="image" src="https://github.com/user-attachments/assets/b501eacc-4a17-4e8c-8645-c158d8c50e5a" />
+<img width="1494" height="808" alt="image" src="https://github.com/user-attachments/assets/1c4d1a8f-acdd-49fe-bc93-1e9e83eb3c6e" />
 
 
 ### ✨ 주요 기능 (Key Features)
