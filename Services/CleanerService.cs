@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.ServiceProcess;
 using SystemCareSuite.Models;
 
@@ -6,6 +7,29 @@ namespace SystemCareSuite.Services
 {
     public static class CleanerService
     {
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern uint GetCompressedFileSizeW(string lpFileName, out uint lpFileSizeHigh);
+
+        /// <summary>
+        /// 스파스(Sparse) 파일이나 NTFS 압축 파일의 경우 논리적 크기(FileInfo.Length) 대신
+        /// 실제 디스크(SSD)에 할당된 물리적 점유 크기를 반환합니다.
+        /// </summary>
+        private static long GetActualDiskSize(FileInfo fi)
+        {
+            try
+            {
+                uint low = GetCompressedFileSizeW(fi.FullName, out uint high);
+                if (low == 0xFFFFFFFF && Marshal.GetLastWin32Error() != 0)
+                {
+                    return fi.Length;
+                }
+                return ((long)high << 32) | low;
+            }
+            catch
+            {
+                return fi.Length;
+            }
+        }
         public static List<CleanerTargetItem> CreateDefaultTargets() =>
         [
             new CleanerTargetItem
@@ -260,7 +284,7 @@ namespace SystemCareSuite.Services
                 {
                     try
                     {
-                        long len = file.Length;
+                        long len = GetActualDiskSize(file);
                         file.Delete();
                         freedBytes += len;
                         count++;
@@ -299,7 +323,7 @@ namespace SystemCareSuite.Services
             {
                 foreach (FileInfo fi in di.GetFiles())
                 {
-                    try { size += fi.Length; } catch { }
+                    try { size += GetActualDiskSize(fi); } catch { }
                 }
             }
             catch { return; }
@@ -404,7 +428,7 @@ namespace SystemCareSuite.Services
                             TargetId = targetId,
                             FileName = fi.Name,
                             FullPath = fi.FullName,
-                            FileSizeBytes = fi.Length,
+                            FileSizeBytes = GetActualDiskSize(fi),
                             IsSelected = true
                         });
                         if (results.Count(x => x.TargetId == targetId) >= maxItems) return;
