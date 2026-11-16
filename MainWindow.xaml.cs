@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -19,6 +20,9 @@ namespace SystemCareSuite
         private readonly SystemMonitorService _monitorService = new();
         private DispatcherTimer? _dashboardTimer;
         private int _tickCounter;
+        private AppSettings _settings = new();
+        private bool _isRamBoostRunning;
+        private DateTime _lastAutoBoostUtc = DateTime.MinValue;
 
         // Module 2: Cleaner
         private readonly ObservableCollection<CleanerTargetItem> _cleanerTargets = [];
@@ -27,7 +31,7 @@ namespace SystemCareSuite
         // Module 3: Registry
         private List<RegistryItem> _registryMasterList = [];
 
-        // Module 4: WinSxS DISM
+        // Module 4: WinSxS DISM / System Repair
         private Process? _activeDismProcess;
         private string _lastDismMode = string.Empty;
         private double? _lastActualSizeMb; // 마지막 분석 시 "실제 크기"(MB) — 정리 전/후 비교용
@@ -42,6 +46,8 @@ namespace SystemCareSuite
 
         private void InitializeModules()
         {
+            _settings = AppSettingsService.Load();
+
             var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
             if (ver != null)
             {
@@ -50,11 +56,54 @@ namespace SystemCareSuite
 
             TxtCoreCount.Text = $"{Environment.ProcessorCount} Threads";
 
+            if (!string.IsNullOrWhiteSpace(_settings.DevRootPath))
+            {
+                TxtDevRootPath.Text = _settings.DevRootPath;
+            }
+            ChkProtectRecentFiles.IsChecked = _settings.ProtectRecentCleanerFiles;
+            ChkAutoRamBoost.IsChecked = _settings.AutoRamBoostEnabled;
+
             foreach (var target in CleanerService.CreateDefaultTargets())
             {
+                if (_settings.CleanerTargetStates.TryGetValue(target.Id, out bool savedSelected))
+                {
+                    target.IsSelected = savedSelected;
+                }
                 _cleanerTargets.Add(target);
             }
             IcCleanerTargets.ItemsSource = _cleanerTargets;
+
+            // 마지막 WinSxS 분석 결과 복원
+            if (!string.IsNullOrWhiteSpace(_settings.LastSxsActual))
+            {
+                TxtSxsActual.Text = _settings.LastSxsActual;
+                TxtSxsShared.Text = _settings.LastSxsShared ?? "미측정";
+                TxtSxsExpected.Text = _settings.LastSxsExpected ?? "미측정";
+                _lastActualSizeMb = _settings.LastSxsActualMb;
+
+                if (_settings.LastSxsRecommended.HasValue)
+                {
+                    TxtSxsStatusCard.Text = _settings.LastSxsStatus ?? (_settings.LastSxsRecommended.Value ? "📢 정리 권장됨" : "✅ 아주 깨끗한 상태");
+                    TxtSxsStatusCard.Foreground = _settings.LastSxsRecommended.Value ? AppBrushes.NeonCrimson : AppBrushes.NeonMint;
+                }
+
+                if (!string.IsNullOrWhiteSpace(_settings.LastSxsAnalyzedAt))
+                {
+                    TxtSxsLastAnalyzed.Text = $"최근 분석: {_settings.LastSxsAnalyzedAt}";
+                }
+            }
+        }
+
+        private void SaveCurrentSettings()
+        {
+            _settings.DevRootPath = TxtDevRootPath.Text.Trim();
+            _settings.ProtectRecentCleanerFiles = ChkProtectRecentFiles.IsChecked == true;
+            _settings.AutoRamBoostEnabled = ChkAutoRamBoost.IsChecked == true;
+            foreach (var t in _cleanerTargets)
+            {
+                _settings.CleanerTargetStates[t.Id] = t.IsSelected;
+            }
+            AppSettingsService.Save(_settings);
         }
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -121,19 +170,97 @@ namespace SystemCareSuite
 
             if (ram.UsagePercent >= 88.0)
             {
-                var warnBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x6D));
-                TxtRamPercent.Foreground = warnBrush;
-                PbRam.Foreground = warnBrush;
+                TxtRamPercent.Foreground = AppBrushes.NeonCrimson;
+                PbRam.Foreground = AppBrushes.NeonCrimson;
                 TxtRamBadge.Text = "⚠️ 부족 주의";
-                TxtRamBadge.Foreground = warnBrush;
+                TxtRamBadge.Foreground = AppBrushes.NeonCrimson;
+
+                if (_settings.AutoRamBoostEnabled &&
+                    !_isRamBoostRunning &&
+                    (DateTime.UtcNow - _lastAutoBoostUtc).TotalSeconds >= 60)
+                {
+                    _lastAutoBoostUtc = DateTime.UtcNow;
+                    _ = RunRamBoostCoreAsync(isAuto: true);
+                }
             }
             else
             {
-                var normalBrush = new SolidColorBrush(Color.FromRgb(0x00, 0xE5, 0xA3));
-                TxtRamPercent.Foreground = normalBrush;
-                PbRam.Foreground = normalBrush;
+                TxtRamPercent.Foreground = AppBrushes.NeonMint;
+                PbRam.Foreground = AppBrushes.NeonMint;
                 TxtRamBadge.Text = "정상";
-                TxtRamBadge.Foreground = normalBrush;
+                TxtRamBadge.Foreground = AppBrushes.NeonMint;
+            }
+        }
+
+        private void ChkAutoRamBoost_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            SaveCurrentSettings();
+        }
+
+        private static ProcessMemoryItem? GetProcessFromMenuItem(object sender)
+        {
+            if (sender is MenuItem mi &&
+                mi.Parent is ContextMenu cm &&
+                cm.PlacementTarget is FrameworkElement fe)
+            {
+                return fe.Tag as ProcessMemoryItem ?? fe.DataContext as ProcessMemoryItem;
+            }
+            return null;
+        }
+
+        private void ProcMenuExclude_Click(object sender, RoutedEventArgs e)
+        {
+            var proc = GetProcessFromMenuItem(sender);
+            if (proc == null) return;
+
+            bool added = RamExclusionService.AddExclusionIfNotExists(proc.ProcessName, proc.ProcessName);
+            TxtRamBoostResult.Text = added
+                ? $"🛡️ '{proc.ProcessName}'을(를) RAM 부스트 제외 목록에 추가했습니다."
+                : $"ℹ️ '{proc.ProcessName}'은(는) 이미 제외 목록에 등록되어 있습니다.";
+        }
+
+        private void ProcMenuOpenLocation_Click(object sender, RoutedEventArgs e)
+        {
+            var proc = GetProcessFromMenuItem(sender);
+            if (proc == null) return;
+
+            string? exePath = SystemMonitorService.GetProcessExecutablePath(proc.Pid);
+            if (string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath))
+            {
+                MessageBox.Show($"'{proc.ProcessName}'(PID: {proc.Pid})의 실행 파일 경로에 접근할 수 없습니다.", "경로 확인 불가", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{exePath}\"") { UseShellExecute = true });
+            }
+            catch { }
+        }
+
+        private void ProcMenuKill_Click(object sender, RoutedEventArgs e)
+        {
+            var proc = GetProcessFromMenuItem(sender);
+            if (proc == null) return;
+
+            var confirm = MessageBox.Show(
+                $"'{proc.ProcessName}' (PID: {proc.Pid}, 메모리 {proc.MemoryText}) 프로세스를 종료하시겠습니까?\n저장하지 않은 작업 내용은 손실될 수 있습니다.",
+                "프로세스 종료 확인",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (confirm != MessageBoxResult.Yes) return;
+
+            if (SystemMonitorService.TryTerminateProcess(proc.Pid, out string err))
+            {
+                TxtRamBoostResult.Text = $"🛑 '{proc.ProcessName}'(PID: {proc.Pid}) 프로세스를 종료했습니다.";
+                RefreshTopProcesses();
+                UpdateDashboardMetrics();
+            }
+            else
+            {
+                MessageBox.Show($"프로세스를 종료하지 못했습니다.\n사유: {err}", "종료 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -174,24 +301,40 @@ namespace SystemCareSuite
 
         private async void BtnRamBoost_Click(object sender, RoutedEventArgs e)
         {
+            await RunRamBoostCoreAsync(isAuto: false);
+        }
+
+        private async Task RunRamBoostCoreAsync(bool isAuto)
+        {
+            if (_isRamBoostRunning) return;
+            _isRamBoostRunning = true;
+
             BtnQuickRamBoost.IsEnabled = false;
-            BtnQuickRamBoost.Content = "⚡ 메모리 최적화 중...";
+            BtnQuickRamBoost.Content = isAuto ? "🤖 자동 메모리 최적화 중..." : "⚡ 메모리 최적화 중...";
 
-            // 제외(화이트리스트) 목록 중 활성화된 항목 로드
-            var exclusions = RamExclusionService.LoadExclusions()
-                .Where(x => x.IsEnabled)
-                .Select(x => x.ProcessName)
-                .ToList();
+            try
+            {
+                // 제외(화이트리스트) 목록 중 활성화된 항목 로드
+                var exclusions = RamExclusionService.LoadExclusions()
+                    .Where(x => x.IsEnabled)
+                    .Select(x => x.ProcessName)
+                    .ToList();
 
-            var (freedMb, count, skipped) = await Task.Run(() => _monitorService.OptimizeRam(exclusions));
+                var (freedMb, count, skipped) = await Task.Run(() => _monitorService.OptimizeRam(exclusions));
 
-            UpdateDashboardMetrics();
-            RefreshTopProcesses();
+                UpdateDashboardMetrics();
+                RefreshTopProcesses();
 
-            string skippedMsg = skipped > 0 ? $", 제외 {skipped}개" : string.Empty;
-            TxtRamBoostResult.Text = $"✅ {count}개 프로세스 정리 (약 {freedMb:F0} MB 확보{skippedMsg})";
-            BtnQuickRamBoost.Content = "⚡ 원클릭 RAM 메모리 부스트";
-            BtnQuickRamBoost.IsEnabled = true;
+                string skippedMsg = skipped > 0 ? $", 제외 {skipped}개" : string.Empty;
+                string prefix = isAuto ? "🤖 자동 부스트:" : "✅";
+                TxtRamBoostResult.Text = $"{prefix} {count}개 프로세스 정리 (약 {freedMb:F0} MB 확보{skippedMsg})";
+            }
+            finally
+            {
+                BtnQuickRamBoost.Content = "⚡ 원클릭 RAM 메모리 부스트";
+                BtnQuickRamBoost.IsEnabled = true;
+                _isRamBoostRunning = false;
+            }
         }
 
         // =====================================================================
@@ -215,7 +358,23 @@ namespace SystemCareSuite
             if (dlg.ShowDialog() == true)
             {
                 TxtDevRootPath.Text = dlg.FolderName;
+                SaveCurrentSettings();
             }
+        }
+
+        private void TxtDevRootPath_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (IsLoaded) SaveCurrentSettings();
+        }
+
+        private void ChkProtectRecentFiles_Changed(object sender, RoutedEventArgs e)
+        {
+            if (IsLoaded) SaveCurrentSettings();
+        }
+
+        private void CleanerTargetCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            if (IsLoaded) SaveCurrentSettings();
         }
 
         private void CbCleanerFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -305,6 +464,7 @@ namespace SystemCareSuite
             TxtCleanerLog.Text = $"[{DateTime.Now:HH:mm:ss}] 파일 정밀 스캔을 시작합니다...\n";
 
             string devRoot = TxtDevRootPath.Text.Trim();
+            bool protectRecent = ChkProtectRecentFiles.IsChecked == true;
             var activeTargetIds = _cleanerTargets.Where(x => x.IsSelected).Select(x => x.Id).ToList();
 
             if (activeTargetIds.Count == 0)
@@ -313,14 +473,20 @@ namespace SystemCareSuite
                 foreach (var t in _cleanerTargets) t.IsSelected = true;
                 activeTargetIds = _cleanerTargets.Select(x => x.Id).ToList();
             }
+            SaveCurrentSettings();
 
-            var progress = new Progress<string>(msg =>
+            var progress = new Progress<(double Percent, string? Log)>(p =>
             {
-                TxtCleanerLog.Text += $"{msg}\n";
-                SvCleanerLog.ScrollToBottom();
+                PbCleaner.Value = Math.Clamp(p.Percent, 0, 100);
+                if (!string.IsNullOrEmpty(p.Log))
+                {
+                    TxtCleanerLog.Text += $"{p.Log}\n";
+                    SvCleanerLog.ScrollToBottom();
+                }
             });
 
-            var scannedFiles = await Task.Run(() => CleanerService.ScanDetailedFiles(activeTargetIds, devRoot, progress));
+            var scanResult = await Task.Run(() => CleanerService.ScanDetailedFiles(activeTargetIds, devRoot, protectRecent, progress));
+            var scannedFiles = scanResult.Files;
 
             // 카테고리별 요약 크기 업데이트
             foreach (var t in _cleanerTargets)
@@ -337,13 +503,23 @@ namespace SystemCareSuite
 
             // 스캔 완료 후 파일 목록 탭으로 자동 전환하여 보여주기
             RbCleanerTabFiles.IsChecked = true;
+            PbCleaner.Value = 100;
 
             long totalBytes = _cleanerMasterFiles.Sum(x => x.FileSizeBytes);
             string totalSizeText = CleanerTargetItem.FormatBytes(totalBytes);
 
-            TxtCleanerStatus.Text = $"스캔 완료 ({_cleanerMasterFiles.Count:N0}개 발견)";
+            string statusExtra = scanResult.TruncatedCategories.Count > 0 ? " · 일부 상한 초과" : string.Empty;
+            TxtCleanerStatus.Text = $"스캔 완료 ({_cleanerMasterFiles.Count:N0}개 발견{statusExtra})";
             TxtCleanerLogStatus.Text = "스캔 완료";
             TxtCleanerLog.Text += $"\n✅ 정밀 스캔 완료! 총 {_cleanerMasterFiles.Count:N0}개 파일 ({totalSizeText})\n";
+            if (scanResult.SkippedRecentCount > 0)
+            {
+                TxtCleanerLog.Text += $"🛡️ 최근 24시간 이내 수정 파일 {scanResult.SkippedRecentCount:N0}개는 안전을 위해 건너뛰었습니다.\n";
+            }
+            if (scanResult.TruncatedCategories.Count > 0)
+            {
+                TxtCleanerLog.Text += $"ℹ️ 항목당 최대 {CleanerService.DefaultMaxFilesPerCategory:N0}개 제한으로 일부 파일이 생략된 분류: {string.Join(", ", scanResult.TruncatedCategories)}\n";
+            }
             SvCleanerLog.ScrollToBottom();
 
             BtnScanCleaner.IsEnabled = true;
@@ -363,7 +539,7 @@ namespace SystemCareSuite
             string selectedSizeText = CleanerTargetItem.FormatBytes(selectedTotalBytes);
 
             var confirm = MessageBox.Show(
-                $"선택한 {selectedFiles.Count:N0}개의 파일(약 {selectedSizeText})을 영구 삭제하시겠습니까?\n\n※ 임시/캐시 파일은 삭제 후 복구할 수 없습니다.",
+                $"선택한 {selectedFiles.Count:N0}개의 항목(약 {selectedSizeText})을 영구 삭제하시겠습니까?\n\n※ 임시/캐시 및 휴지통 파일은 삭제 후 복구할 수 없습니다.",
                 "클리너 삭제 확인",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
@@ -378,19 +554,24 @@ namespace SystemCareSuite
 
             // 실시간 상황을 볼 수 있도록 로그 탭으로 전환
             RbCleanerTabLog.IsChecked = true;
-            TxtCleanerLog.Text += $"\n[{DateTime.Now:HH:mm:ss}] 선택된 {selectedFiles.Count:N0}개 파일 삭제를 시작합니다...\n";
+            TxtCleanerLog.Text += $"\n[{DateTime.Now:HH:mm:ss}] 선택된 {selectedFiles.Count:N0}개 항목 삭제를 시작합니다...\n";
 
-            var progress = new Progress<string>(msg =>
+            var progress = new Progress<(double Percent, string? Log)>(p =>
             {
-                TxtCleanerLog.Text += $"{msg}\n";
-                SvCleanerLog.ScrollToBottom();
+                PbCleaner.Value = Math.Clamp(p.Percent, 0, 100);
+                if (!string.IsNullOrEmpty(p.Log))
+                {
+                    TxtCleanerLog.Text += $"{p.Log}\n";
+                    SvCleanerLog.ScrollToBottom();
+                }
             });
 
             var (freedBytes, deletedCount, failedCount) = await Task.Run(() => CleanerService.DeleteSelectedFiles(selectedFiles, progress));
 
-            // 삭제된 파일들을 마스터 목록에서 제거
+            // 삭제된 파일들을 마스터 목록에서 제거 (휴지통은 삭제 성공 시 제거)
             var deletedPathSet = new HashSet<string>(selectedFiles.Select(x => x.FullPath), StringComparer.OrdinalIgnoreCase);
-            _cleanerMasterFiles.RemoveAll(x => deletedPathSet.Contains(x.FullPath) && !File.Exists(x.FullPath));
+            _cleanerMasterFiles.RemoveAll(x => deletedPathSet.Contains(x.FullPath) &&
+                (x.TargetId == "recycle_bin" ? failedCount == 0 : !File.Exists(x.FullPath)));
 
             // 카테고리별 요약도 갱신
             foreach (var t in _cleanerTargets)
@@ -401,6 +582,7 @@ namespace SystemCareSuite
             }
 
             ApplyCleanerFilter();
+            PbCleaner.Value = 100;
 
             string finalSize = CleanerTargetItem.FormatBytes(freedBytes);
             TxtCleanerStatus.Text = $"정리 완료 ({finalSize} 확보)";
@@ -428,17 +610,31 @@ namespace SystemCareSuite
         // =====================================================================
         // MODULE 3: REGISTRY & STARTUP MANAGER
         // =====================================================================
+        private void BtnRegOpenBackups_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (!Directory.Exists(AppSettingsService.BackupsDirectory))
+                {
+                    Directory.CreateDirectory(AppSettingsService.BackupsDirectory);
+                }
+                Process.Start(new ProcessStartInfo(AppSettingsService.BackupsDirectory) { UseShellExecute = true });
+            }
+            catch { }
+        }
+
         private async void BtnRegScan_Click(object sender, RoutedEventArgs e)
         {
             BtnRegScan.IsEnabled = false;
             BtnViewActiveStartup.IsEnabled = false;
+            BtnRegToggleStartup.IsEnabled = false;
             BtnRegClean.IsEnabled = false;
             TxtRegStatus.Text = "🔍 레지스트리 정밀 스캔 중...";
-            TxtRegStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xF0, 0xFF));
+            TxtRegStatus.Foreground = AppBrushes.NeonCyan;
 
             _registryMasterList = await Task.Run(RegistryScannerService.ScanAllBrokenItems);
 
-            if (CbRegFilter.SelectedIndex == 5)
+            if (CbRegFilter.SelectedIndex >= 5)
                 CbRegFilter.SelectedIndex = 0;
             else
                 ApplyRegistryFilter();
@@ -447,16 +643,17 @@ namespace SystemCareSuite
             if (_registryMasterList.Count > 0)
             {
                 TxtRegStatus.Text = $"⚠️ {_registryMasterList.Count}개의 정리 대상 발견";
-                TxtRegStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xB8, 0x00));
+                TxtRegStatus.Foreground = AppBrushes.NeonAmber;
             }
             else
             {
                 TxtRegStatus.Text = "✅ 유령 레지스트리 없이 깨끗합니다!";
-                TxtRegStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE5, 0xA3));
+                TxtRegStatus.Foreground = AppBrushes.NeonMint;
             }
 
             BtnRegScan.IsEnabled = true;
             BtnViewActiveStartup.IsEnabled = true;
+            BtnRegToggleStartup.IsEnabled = true;
             BtnRegClean.IsEnabled = true;
         }
 
@@ -464,18 +661,79 @@ namespace SystemCareSuite
         {
             BtnRegScan.IsEnabled = false;
             BtnViewActiveStartup.IsEnabled = false;
-            TxtRegStatus.Text = "🚀 정상 등록된 시작프로그램 조회 중...";
+            BtnRegToggleStartup.IsEnabled = false;
+            TxtRegStatus.Text = "🚀 시작프로그램(정상/중지) 조회 중...";
 
             _registryMasterList = await Task.Run(() => RegistryScannerService.ScanStartupItems(onlyBroken: false));
             CbRegFilter.SelectedIndex = 0;
             ApplyRegistryFilter();
 
             TxtRegTotalCount.Text = _registryMasterList.Count.ToString("N0");
-            TxtRegStatus.Text = $"🚀 활성 시작프로그램 {_registryMasterList.Count}개 조회됨";
-            TxtRegStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xF0, 0xFF));
+            int activeCount = _registryMasterList.Count(x => x.Category == "정상 시작앱");
+            int disabledCount = _registryMasterList.Count(x => x.Category == "중지된 시작앱");
+            TxtRegStatus.Text = $"🚀 시작앱 총 {_registryMasterList.Count}개 (사용 {activeCount} · 중지 {disabledCount})";
+            TxtRegStatus.Foreground = AppBrushes.NeonCyan;
 
             BtnRegScan.IsEnabled = true;
             BtnViewActiveStartup.IsEnabled = true;
+            BtnRegToggleStartup.IsEnabled = true;
+        }
+
+        private void BtnRegToggleStartup_Click(object sender, RoutedEventArgs e)
+        {
+            if (DgRegistry.ItemsSource is not List<RegistryItem> items) return;
+
+            var targets = items.Where(x => x.IsChecked && x.Category is "정상 시작앱" or "중지된 시작앱").ToList();
+            if (targets.Count == 0 &&
+                DgRegistry.SelectedItem is RegistryItem selected &&
+                selected.Category is "정상 시작앱" or "중지된 시작앱")
+            {
+                targets.Add(selected);
+            }
+
+            if (targets.Count == 0)
+            {
+                MessageBox.Show("사용/중지 상태를 전환할 시작프로그램 항목을 체크하거나 행을 선택해 주세요.\n(먼저 [🚀 시작앱 조회]를 눌러 목록을 불러올 수 있습니다.)", "알림", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            int toggled = 0;
+            var errors = new List<string>();
+            foreach (var item in targets)
+            {
+                bool enable = item.Category == "중지된 시작앱";
+                if (RegistryScannerService.ToggleStartupEnabled(item, enable, out string err))
+                {
+                    item.IsChecked = false;
+                    toggled++;
+                }
+                else if (!string.IsNullOrWhiteSpace(err))
+                {
+                    errors.Add(err);
+                }
+            }
+
+            ApplyRegistryFilter();
+            DgRegistry.Items.Refresh();
+
+            int activeCount = _registryMasterList.Count(x => x.Category == "정상 시작앱");
+            int disabledCount = _registryMasterList.Count(x => x.Category == "중지된 시작앱");
+
+            if (toggled > 0)
+            {
+                TxtRegStatus.Text = $"⏯️ {toggled}개 상태 전환 완료 (사용 {activeCount} · 중지 {disabledCount})";
+                TxtRegStatus.Foreground = AppBrushes.NeonMint;
+            }
+            else
+            {
+                TxtRegStatus.Text = "⚠️ 시작프로그램 상태를 전환하지 못했습니다.";
+                TxtRegStatus.Foreground = AppBrushes.NeonCrimson;
+            }
+
+            if (errors.Count > 0)
+            {
+                MessageBox.Show(string.Join("\n", errors), "일부 항목 전환 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         }
 
         private void BtnRegClean_Click(object sender, RoutedEventArgs e)
@@ -489,13 +747,15 @@ namespace SystemCareSuite
                 return;
             }
 
-            bool hasActiveStartup = targets.Any(x => x.Category == "정상 시작앱");
+            bool hasActiveStartup = targets.Any(x => x.Category is "정상 시작앱" or "중지된 시작앱");
             string confirmMsg = hasActiveStartup
-                ? $"선택한 {targets.Count}개 항목 중 '정상 시작앱'이 포함되어 있습니다.\n정말 레지스트리에서 삭제하시겠습니까?"
-                : $"선택한 {targets.Count}개의 불필요한 레지스트리 항목을 안전하게 삭제하시겠습니까?";
+                ? $"선택한 {targets.Count}개 항목 중 시작프로그램이 포함되어 있습니다.\n(삭제 대신 [⏯️ 사용/중지 전환]을 사용할 수도 있습니다.)\n\n정리 전 .reg 백업 파일을 자동 생성한 후 삭제할까요?"
+                : $"선택한 {targets.Count}개의 불필요한 레지스트리 항목을 삭제하시겠습니까?\n(정리 직전 Backups 폴더에 .reg 복구 백업이 자동 저장됩니다.)";
 
             if (MessageBox.Show(confirmMsg, "레지스트리 정리 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
                 return;
+
+            string? backupPath = RegistryScannerService.BackupRegistryItems(targets);
 
             int deleted = 0;
             foreach (var item in targets)
@@ -509,8 +769,10 @@ namespace SystemCareSuite
 
             ApplyRegistryFilter();
             TxtRegTotalCount.Text = _registryMasterList.Count.ToString("N0");
-            TxtRegStatus.Text = $"✅ {deleted}개 항목 정리 완료!";
-            TxtRegStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE5, 0xA3));
+            TxtRegStatus.Text = backupPath != null
+                ? $"✅ {deleted}개 정리 완료 (.reg 백업 저장됨)"
+                : $"✅ {deleted}개 항목 정리 완료!";
+            TxtRegStatus.Foreground = AppBrushes.NeonMint;
         }
 
         private void CbRegFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -572,8 +834,8 @@ namespace SystemCareSuite
             }
 
             var para = new Paragraph { Margin = new Thickness(0, 0, 0, 3) };
-            para.Inlines.Add(new Run($"[{DateTime.Now:HH:mm:ss}] ") { Foreground = new SolidColorBrush(Color.FromRgb(0x6E, 0x76, 0x81)) });
-            para.Inlines.Add(new Run(message) { Foreground = color ?? new SolidColorBrush(Color.FromRgb(0xC9, 0xD1, 0xD9)) });
+            para.Inlines.Add(new Run($"[{DateTime.Now:HH:mm:ss}] ") { Foreground = AppBrushes.LogTimestamp });
+            para.Inlines.Add(new Run(message) { Foreground = color ?? AppBrushes.TextDefault });
             RtbSxsLog.Document.Blocks.Add(para);
             RtbSxsLog.ScrollToEnd();
         }
@@ -583,25 +845,79 @@ namespace SystemCareSuite
             BtnSxsAnalyze.IsEnabled = idle;
             BtnSxsCleanup.IsEnabled = idle;
             BtnSxsResetBase.IsEnabled = idle;
+            BtnSxsSfc.IsEnabled = idle;
+            BtnSxsRestoreHealth.IsEnabled = idle;
             BtnSxsSaveLog.IsEnabled = idle;
             BtnSxsCancel.IsEnabled = !idle;
         }
 
-        // DISM 실행 후 종료 코드를 반환합니다. (0 = 성공, 3010 = 재부팅 필요, 그 외 = 실패, -1 = 실행 불가/중지)
-        private async Task<int> RunDismAsync(string arguments, string jobTitle)
+        private static Encoding GetDismConsoleEncoding()
+        {
+            try
+            {
+                int oemCp = CultureInfo.InstalledUICulture.TextInfo.OEMCodePage;
+                return Encoding.GetEncoding(oemCp);
+            }
+            catch
+            {
+                return Encoding.GetEncoding("euc-kr");
+            }
+        }
+
+        private static async Task ReadConsoleStreamAsync(StreamReader reader, CancellationToken token, Action<string> onLine)
+        {
+            char[] buffer = new char[512];
+            var sb = new StringBuilder();
+            while (!token.IsCancellationRequested)
+            {
+                int read = await reader.ReadAsync(buffer, 0, buffer.Length);
+                if (read <= 0) break;
+                for (int i = 0; i < read; i++)
+                {
+                    char c = buffer[i];
+                    if (c == '\r' || c == '\n')
+                    {
+                        if (sb.Length > 0)
+                        {
+                            string line = sb.ToString();
+                            sb.Clear();
+                            onLine(line);
+                        }
+                    }
+                    else
+                    {
+                        sb.Append(c);
+                    }
+                }
+            }
+            if (sb.Length > 0)
+            {
+                onLine(sb.ToString());
+            }
+        }
+
+        private Task<int> RunDismAsync(string arguments, string jobTitle) =>
+            RunSystemToolAsync("dism.exe", arguments, jobTitle, isSfc: false);
+
+        // 시스템 도구(DISM / SFC) 실행 후 종료 코드를 반환합니다. (0 = 성공, 3010 = 재부팅 필요, 그 외 = 실패, -1 = 실행 불가/중지)
+        private async Task<int> RunSystemToolAsync(string fileName, string arguments, string jobTitle, bool isSfc)
         {
             SetSxsButtonsState(idle: false);
             PbSxs.IsIndeterminate = true;
             PbSxs.Value = 0;
             DateTime startTime = DateTime.Now;
             TxtSxsProgressStatus.Text = $"{jobTitle} 준비 중... (00:00)";
-            AppendSxsLog($"🚀 [{jobTitle}] 작업을 시작합니다. (dism.exe {arguments})", Brushes.DeepSkyBlue);
+            AppendSxsLog($"🚀 [{jobTitle}] 작업을 시작합니다. ({fileName} {arguments})", Brushes.DeepSkyBlue);
             _dismLogBuffer.Clear();
 
-            if (arguments.Contains("/StartComponentCleanup", StringComparison.OrdinalIgnoreCase))
+            if (!isSfc && arguments.Contains("/StartComponentCleanup", StringComparison.OrdinalIgnoreCase))
             {
                 AppendSxsLog("💡 [안내] WinSxS 정리는 시스템 파일 및 수십만 개의 백업 링크를 전수 대조·압축·정리하므로 용량에 따라 5분~20분 이상 소요될 수 있습니다.", Brushes.DeepSkyBlue);
                 AppendSxsLog("💡 초기 2~4분간은 준비 및 의존성 계산 단계로 진행률이 0%에 머무를 수 있습니다. PC가 멈춘 것이 아니니 안심하고 기다려 주세요.", Brushes.DeepSkyBlue);
+            }
+            else if (isSfc || arguments.Contains("/RestoreHealth", StringComparison.OrdinalIgnoreCase))
+            {
+                AppendSxsLog("💡 [안내] Windows 시스템 파일 및 이미지 무결성 검사는 환경에 따라 5~15분 정도 소요될 수 있습니다.", Brushes.DeepSkyBlue);
             }
 
             int exitCode = -1;
@@ -624,7 +940,7 @@ namespace SystemCareSuite
                         break;
                     }
 
-                    bool isAnalyze = arguments.Contains("/AnalyzeComponentStore", StringComparison.OrdinalIgnoreCase);
+                    bool isAnalyze = !isSfc && arguments.Contains("/AnalyzeComponentStore", StringComparison.OrdinalIgnoreCase);
                     var elapsed = DateTime.Now - startTime;
                     _ = Dispatcher.BeginInvoke(() =>
                     {
@@ -643,21 +959,23 @@ namespace SystemCareSuite
                     if (elapsedMinutes > reminderMinute && (DateTime.Now - lastOutputTime).TotalSeconds >= 45)
                     {
                         reminderMinute = elapsedMinutes;
-                        string hint = isAnalyze
-                            ? reminderMinute switch
-                            {
-                                1 => "⏳ [작업 진행 중] Windows 모듈 작업자(TiWorker)가 WinSxS 저장소 구성 요소를 정밀 검사하고 있습니다.",
-                                2 => "⏳ [작업 진행 중] 패키지 종속성을 확인하고 실제 점유 용량을 정밀 계산 중입니다.",
-                                3 => "⏳ [작업 진행 중] 시스템 저장소 상세 분석 및 정리 권장 여부를 집계 중입니다. 잠시만 기다려 주세요.",
-                                _ => "⏳ [작업 진행 중] WinSxS 저장소 상세 분석 작업이 계속 진행 중입니다. 잠시만 더 기다려 주세요."
-                            }
-                            : reminderMinute switch
-                            {
-                                1 => "⏳ [작업 진행 중] Windows 모듈 작업자(TiWorker)가 백그라운드에서 파일 정리를 정상 수행하고 있습니다.",
-                                2 => "⏳ [작업 진행 중] WinSxS 패키지 종속성 검사 및 정리를 계속 진행하고 있습니다.",
-                                3 => "⏳ [작업 진행 중] 수많은 백업 패키지를 압축하고 안전하게 제거 중입니다. 최대 10~20분 소요될 수 있습니다.",
-                                _ => "⏳ [작업 진행 중] 대용량 구성 요소 정리가 안전하게 진행 중입니다. 잠시만 더 기다려 주세요."
-                            };
+                        string hint = isSfc
+                            ? "⏳ [작업 진행 중] Windows 리소스 보호가 보호된 시스템 파일의 무결성을 계속 검증하고 있습니다."
+                            : isAnalyze
+                                ? reminderMinute switch
+                                {
+                                    1 => "⏳ [작업 진행 중] Windows 모듈 작업자(TiWorker)가 WinSxS 저장소 구성 요소를 정밀 검사하고 있습니다.",
+                                    2 => "⏳ [작업 진행 중] 패키지 종속성을 확인하고 실제 점유 용량을 정밀 계산 중입니다.",
+                                    3 => "⏳ [작업 진행 중] 시스템 저장소 상세 분석 및 정리 권장 여부를 집계 중입니다. 잠시만 기다려 주세요.",
+                                    _ => "⏳ [작업 진행 중] WinSxS 저장소 상세 분석 작업이 계속 진행 중입니다. 잠시만 더 기다려 주세요."
+                                }
+                                : reminderMinute switch
+                                {
+                                    1 => "⏳ [작업 진행 중] Windows 모듈 작업자(TiWorker)가 백그라운드에서 작업을 정상 수행하고 있습니다.",
+                                    2 => "⏳ [작업 진행 중] 시스템 구성 요소 검사 및 정리를 계속 진행하고 있습니다.",
+                                    3 => "⏳ [작업 진행 중] 대용량 패키지 처리가 진행 중입니다. 최대 10~20분 소요될 수 있습니다.",
+                                    _ => "⏳ [작업 진행 중] 작업이 안전하게 진행 중입니다. 잠시만 더 기다려 주세요."
+                                };
                         AppendSxsLog($"{hint} (경과 시간: {elapsed:mm\\:ss})", Brushes.DeepSkyBlue);
                     }
                 }
@@ -674,7 +992,7 @@ namespace SystemCareSuite
                 }
 
                 var m = DismPercentRegex().Match(trimmed);
-                if (m.Success && double.TryParse(m.Groups["num"].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double pct))
+                if (m.Success && double.TryParse(m.Groups["num"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double pct))
                 {
                     lastPercentage = pct;
                     lastOutputTime = DateTime.Now;
@@ -690,7 +1008,9 @@ namespace SystemCareSuite
 
                 if (!(trimmed.StartsWith('[') && trimmed.Contains('%')) &&
                     !trimmed.StartsWith("배포 이미지") &&
-                    !trimmed.StartsWith("이미지 버전"))
+                    !trimmed.StartsWith("이미지 버전") &&
+                    !trimmed.StartsWith("Deployment Image") &&
+                    !trimmed.StartsWith("Image Version"))
                 {
                     lastOutputTime = DateTime.Now;
                     AppendSxsLog(trimmed);
@@ -712,88 +1032,26 @@ namespace SystemCareSuite
 
             try
             {
+                Encoding consoleEncoding = isSfc ? Encoding.Unicode : GetDismConsoleEncoding();
                 await Task.Run(async () =>
                 {
                     try
                     {
                         using var proc = new Process();
                         _activeDismProcess = proc;
-                        proc.StartInfo.FileName = "dism.exe";
+                        proc.StartInfo.FileName = fileName;
                         proc.StartInfo.Arguments = arguments;
                         proc.StartInfo.UseShellExecute = false;
                         proc.StartInfo.RedirectStandardOutput = true;
                         proc.StartInfo.RedirectStandardError = true;
                         proc.StartInfo.CreateNoWindow = true;
-                        proc.StartInfo.StandardOutputEncoding = Encoding.GetEncoding("euc-kr");
-                        proc.StartInfo.StandardErrorEncoding = Encoding.GetEncoding("euc-kr");
+                        proc.StartInfo.StandardOutputEncoding = consoleEncoding;
+                        proc.StartInfo.StandardErrorEncoding = consoleEncoding;
 
                         proc.Start();
 
-                        var stdoutTask = Task.Run(async () =>
-                        {
-                            char[] buffer = new char[512];
-                            var sb = new StringBuilder();
-                            var reader = proc.StandardOutput;
-                            while (!cts.Token.IsCancellationRequested)
-                            {
-                                int read = await reader.ReadAsync(buffer, 0, buffer.Length);
-                                if (read <= 0) break;
-                                for (int i = 0; i < read; i++)
-                                {
-                                    char c = buffer[i];
-                                    if (c == '\r' || c == '\n')
-                                    {
-                                        if (sb.Length > 0)
-                                        {
-                                            string line = sb.ToString();
-                                            sb.Clear();
-                                            ProcessOutputLine(line);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        sb.Append(c);
-                                    }
-                                }
-                            }
-                            if (sb.Length > 0)
-                            {
-                                ProcessOutputLine(sb.ToString());
-                            }
-                        });
-
-                        var stderrTask = Task.Run(async () =>
-                        {
-                            char[] buffer = new char[512];
-                            var sb = new StringBuilder();
-                            var reader = proc.StandardError;
-                            while (!cts.Token.IsCancellationRequested)
-                            {
-                                int read = await reader.ReadAsync(buffer, 0, buffer.Length);
-                                if (read <= 0) break;
-                                for (int i = 0; i < read; i++)
-                                {
-                                    char c = buffer[i];
-                                    if (c == '\r' || c == '\n')
-                                    {
-                                        if (sb.Length > 0)
-                                        {
-                                            string errLine = sb.ToString();
-                                            sb.Clear();
-                                            ProcessErrorLine(errLine);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        sb.Append(c);
-                                    }
-                                }
-                            }
-                            if (sb.Length > 0)
-                            {
-                                ProcessErrorLine(sb.ToString());
-                            }
-                        });
+                        var stdoutTask = ReadConsoleStreamAsync(proc.StandardOutput, cts.Token, ProcessOutputLine);
+                        var stderrTask = ReadConsoleStreamAsync(proc.StandardError, cts.Token, ProcessErrorLine);
 
                         await proc.WaitForExitAsync(cts.Token);
                         await Task.WhenAll(stdoutTask, stderrTask);
@@ -805,7 +1063,7 @@ namespace SystemCareSuite
                     }
                     catch (Exception ex)
                     {
-                        AppendSxsLog($"❌ DISM 실행 오류: {ex.Message}", Brushes.Tomato);
+                        AppendSxsLog($"❌ 실행 오류: {ex.Message}", Brushes.Tomato);
                     }
                     finally
                     {
@@ -822,7 +1080,7 @@ namespace SystemCareSuite
             // 종료 코드에 따라 성공/재부팅 필요/실패를 명확히 안내
             if (exitCode == 0)
             {
-                AppendSxsLog($"✅ [{jobTitle}] DISM이 정상 종료되었습니다. (종료 코드 0)", Brushes.SpringGreen);
+                AppendSxsLog($"✅ [{jobTitle}] 작업이 정상 종료되었습니다. (종료 코드 0)", Brushes.SpringGreen);
             }
             else if (exitCode == 3010)
             {
@@ -830,11 +1088,11 @@ namespace SystemCareSuite
             }
             else if (exitCode == -1)
             {
-                AppendSxsLog($"❌ [{jobTitle}] DISM이 정상적으로 끝나지 않았습니다. (실행 오류 또는 사용자 중지)", Brushes.Tomato);
+                AppendSxsLog($"❌ [{jobTitle}] 작업이 정상적으로 끝나지 않았습니다. (실행 오류 또는 사용자 중지)", Brushes.Tomato);
             }
             else
             {
-                AppendSxsLog($"❌ [{jobTitle}] DISM 작업이 실패했습니다. (종료 코드 {exitCode} / 0x{exitCode:X8}) 위의 오류 메시지를 확인하세요. 재부팅 후 다시 시도하면 해결되는 경우가 많습니다.", Brushes.Tomato);
+                AppendSxsLog($"❌ [{jobTitle}] 작업이 실패했습니다. (종료 코드 {exitCode} / 0x{exitCode:X8}) 위의 오류 메시지를 확인하세요. 재부팅 후 다시 시도하면 해결되는 경우가 많습니다.", Brushes.Tomato);
             }
 
             PbSxs.IsIndeterminate = false;
@@ -850,24 +1108,29 @@ namespace SystemCareSuite
             var sizeRegex = DismSizeRegex();
             string[] lines = fullOutput.Split([Environment.NewLine, "\n"], StringSplitOptions.RemoveEmptyEntries);
             double? actualMb = null;
+            bool parsedAny = false;
 
             foreach (string line in lines)
             {
-                if (line.Contains("구성 요소 저장소 정리 권장"))
+                if (line.Contains("구성 요소 저장소 정리 권장", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("Component Store Cleanup Recommended", StringComparison.OrdinalIgnoreCase))
                 {
-                    // DISM이 알려준 권장 여부를 그대로 표시 (임의 고정 표시 제거)
                     bool recommended = line.Contains('예') || line.Contains("Yes", StringComparison.OrdinalIgnoreCase);
 
                     if (!recommended)
                     {
                         TxtSxsStatusCard.Text = "✅ 아주 깨끗한 상태";
-                        TxtSxsStatusCard.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE5, 0xA3));
+                        TxtSxsStatusCard.Foreground = AppBrushes.NeonMint;
                     }
                     else
                     {
                         TxtSxsStatusCard.Text = "📢 정리 권장됨";
-                        TxtSxsStatusCard.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x6D));
+                        TxtSxsStatusCard.Foreground = AppBrushes.NeonCrimson;
                     }
+
+                    _settings.LastSxsStatus = TxtSxsStatusCard.Text;
+                    _settings.LastSxsRecommended = recommended;
+                    parsedAny = true;
                     continue;
                 }
 
@@ -877,15 +1140,37 @@ namespace SystemCareSuite
                 string size = m.Groups["size"].Value.Trim();
                 string unit = m.Groups["unit"].Value.Trim();
 
-                if (line.Contains("실제 크기"))
+                if (line.Contains("실제 크기", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("Actual Size of Component Store", StringComparison.OrdinalIgnoreCase))
                 {
                     TxtSxsActual.Text = $"{size} {unit}";
                     actualMb = ToMegabytes(size, unit);
+                    _settings.LastSxsActual = TxtSxsActual.Text;
+                    _settings.LastSxsActualMb = actualMb;
+                    parsedAny = true;
                 }
-                else if (line.Contains("Windows와 공유됨"))
+                else if (line.Contains("Windows와 공유됨", StringComparison.OrdinalIgnoreCase) ||
+                         line.Contains("Shared with Windows", StringComparison.OrdinalIgnoreCase))
+                {
                     TxtSxsShared.Text = $"{size} {unit}";
-                else if (line.Contains("백업 및 기능 사용 안 함"))
-                    TxtSxsExpected.Text = $"{size} {unit}"; // DISM이 알려준 실제 값을 항상 표시
+                    _settings.LastSxsShared = TxtSxsShared.Text;
+                    parsedAny = true;
+                }
+                else if (line.Contains("백업 및 기능 사용 안 함", StringComparison.OrdinalIgnoreCase) ||
+                         line.Contains("Backups and Disabled Features", StringComparison.OrdinalIgnoreCase))
+                {
+                    TxtSxsExpected.Text = $"{size} {unit}";
+                    _settings.LastSxsExpected = TxtSxsExpected.Text;
+                    parsedAny = true;
+                }
+            }
+
+            if (parsedAny)
+            {
+                string stamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+                _settings.LastSxsAnalyzedAt = stamp;
+                TxtSxsLastAnalyzed.Text = $"최근 분석: {stamp}";
+                SaveCurrentSettings();
             }
 
             return actualMb;
@@ -983,6 +1268,16 @@ namespace SystemCareSuite
             await RunCleanupAndCompareAsync("/Online /Cleanup-Image /StartComponentCleanup /ResetBase", "WinSxS 심층 정리 (ResetBase)");
         }
 
+        private async void BtnSxsSfc_Click(object sender, RoutedEventArgs e)
+        {
+            await RunSystemToolAsync("sfc.exe", "/scannow", "SFC 시스템 파일 검사", isSfc: true);
+        }
+
+        private async void BtnSxsRestoreHealth_Click(object sender, RoutedEventArgs e)
+        {
+            await RunDismAsync("/Online /Cleanup-Image /RestoreHealth", "DISM 시스템 이미지 복구");
+        }
+
         private void BtnSxsCancel_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -1025,6 +1320,7 @@ namespace SystemCareSuite
 
         private void Window_Closed(object sender, EventArgs e)
         {
+            SaveCurrentSettings();
             _dashboardTimer?.Stop();
             _monitorService.Dispose();
             try

@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.IO;
+using System.Text;
 using Microsoft.Win32;
 using SystemCareSuite.Models;
 
@@ -36,7 +38,43 @@ namespace SystemCareSuite.Services
                 CheckStartupRegistry(Registry.CurrentUser, loc, onlyBroken, results);
                 CheckStartupRegistry(Registry.LocalMachine, loc, onlyBroken, results);
             }
+
+            CheckStartupRegistry(Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run", onlyBroken, results);
+
+            if (!onlyBroken)
+            {
+                CheckStartupFolder(Registry.CurrentUser, Environment.GetFolderPath(Environment.SpecialFolder.Startup), results);
+                CheckStartupFolder(Registry.LocalMachine, Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup), results);
+            }
+
             return results;
+        }
+
+        private static void CheckStartupFolder(RegistryKey root, string folderPath, List<RegistryItem> results)
+        {
+            if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath)) return;
+
+            string rootShort = root == Registry.LocalMachine ? "HKLM" : "HKCU";
+            try
+            {
+                foreach (string filePath in Directory.EnumerateFiles(folderPath))
+                {
+                    string fileName = Path.GetFileName(filePath);
+                    if (fileName.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    bool isDisabled = IsStartupDisabled(root, "StartupFolder", fileName);
+                    results.Add(new RegistryItem
+                    {
+                        IsChecked = false,
+                        Category = isDisabled ? "중지된 시작앱" : "정상 시작앱",
+                        Name = fileName,
+                        Data = filePath,
+                        KeyPath = $@"{rootShort}\StartupFolder",
+                        Reason = isDisabled ? "일시 중지된 시작 폴더 앱 (재사용 가능)" : "시작프로그램 폴더에 등록된 앱"
+                    });
+                }
+            }
+            catch { }
         }
 
         public static List<RegistryItem> ScanUnusedSoftware()
@@ -157,14 +195,15 @@ namespace SystemCareSuite.Services
                     }
                     else if (!onlyBroken && exists)
                     {
+                        bool isDisabled = IsStartupDisabled(root, subKey, valueName);
                         results.Add(new RegistryItem
                         {
                             IsChecked = false,
-                            Category = "정상 시작앱",
+                            Category = isDisabled ? "중지된 시작앱" : "정상 시작앱",
                             Name = valueName,
                             Data = cleanPath,
                             KeyPath = $@"{rootShort}\{subKey}",
-                            Reason = "정상 등록된 윈도우 시작프로그램"
+                            Reason = isDisabled ? "일시 중지된 시작프로그램 (재사용 가능)" : "정상 등록된 윈도우 시작프로그램"
                         });
                     }
                 }
@@ -206,18 +245,289 @@ namespace SystemCareSuite.Services
             catch { }
         }
 
+        private static string? GetStartupApprovedSubKey(string runSubKey)
+        {
+            if (runSubKey.Equals("StartupFolder", StringComparison.OrdinalIgnoreCase))
+                return @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder";
+            if (runSubKey.EndsWith(@"WOW6432Node\Microsoft\Windows\CurrentVersion\Run", StringComparison.OrdinalIgnoreCase))
+                return @"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32";
+            if (runSubKey.EndsWith(@"Microsoft\Windows\CurrentVersion\Run", StringComparison.OrdinalIgnoreCase))
+                return @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+            return null;
+        }
+
+        private static bool IsStartupDisabled(RegistryKey root, string runSubKey, string valueName)
+        {
+            try
+            {
+                string? approvedSubKey = GetStartupApprovedSubKey(runSubKey);
+                if (approvedSubKey == null) return false;
+
+                using RegistryKey? key = root.OpenSubKey(approvedSubKey);
+                if (key?.GetValue(valueName) is byte[] bytes && bytes.Length > 0)
+                {
+                    return (bytes[0] & 0x01) == 1;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        public static bool ToggleStartupEnabled(RegistryItem item, bool enable, out string errorMessage)
+        {
+            errorMessage = string.Empty;
+            try
+            {
+                var (root, subKeyPath) = ParseRootAndSubKey(item.KeyPath);
+                string? approvedSubKey = GetStartupApprovedSubKey(subKeyPath);
+                if (approvedSubKey == null)
+                {
+                    errorMessage = subKeyPath.Contains("RunOnce", StringComparison.OrdinalIgnoreCase)
+                        ? $"'{item.Name}'은(는) 1회성(RunOnce) 항목이라 일시 중지를 지원하지 않습니다."
+                        : $"'{item.KeyPath}' 경로는 사용/중지 전환을 지원하지 않습니다.";
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(item.Name))
+                {
+                    errorMessage = "항목 이름이 비어 있습니다.";
+                    return false;
+                }
+
+                using RegistryKey? approvedKey = root.OpenSubKey(approvedSubKey, writable: true)
+                    ?? root.CreateSubKey(approvedSubKey, writable: true);
+                if (approvedKey == null)
+                {
+                    errorMessage = $"레지스트리 키를 열 수 없습니다: {approvedSubKey}";
+                    return false;
+                }
+
+                byte[] payload = new byte[12];
+                if (enable)
+                {
+                    payload[0] = 0x02;
+                }
+                else
+                {
+                    payload[0] = 0x03;
+                    byte[] ft = BitConverter.GetBytes(DateTime.UtcNow.ToFileTimeUtc());
+                    Array.Copy(ft, 0, payload, 4, 8);
+                }
+
+                approvedKey.SetValue(item.Name, payload, RegistryValueKind.Binary);
+                approvedKey.Flush();
+
+                bool nowDisabled = IsStartupDisabled(root, subKeyPath, item.Name);
+                if (nowDisabled != !enable)
+                {
+                    errorMessage = $"'{item.Name}' 상태 변경이 레지스트리에 반영되지 않았습니다.";
+                    return false;
+                }
+
+                bool isFolder = subKeyPath.Equals("StartupFolder", StringComparison.OrdinalIgnoreCase);
+                item.Category = enable ? "정상 시작앱" : "중지된 시작앱";
+                item.Reason = enable
+                    ? (isFolder ? "시작프로그램 폴더에 등록된 앱" : "정상 등록된 윈도우 시작프로그램")
+                    : (isFolder ? "일시 중지된 시작 폴더 앱 (재사용 가능)" : "일시 중지된 시작프로그램 (재사용 가능)");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+                return false;
+            }
+        }
+
+        public static string? BackupRegistryItems(IEnumerable<RegistryItem> items)
+        {
+            var list = items.ToList();
+            if (list.Count == 0) return null;
+
+            try
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("Windows Registry Editor Version 5.00");
+                sb.AppendLine();
+
+                bool hasContent = false;
+                var exportedSubTrees = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var group in list.GroupBy(x => x.KeyPath, StringComparer.OrdinalIgnoreCase))
+                {
+                    var (root, subKeyPath) = ParseRootAndSubKey(group.Key);
+                    if (subKeyPath.Equals("StartupFolder", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string fullHiveName = root == Registry.LocalMachine ? "HKEY_LOCAL_MACHINE" : "HKEY_CURRENT_USER";
+                    string fullRegPath = $@"{fullHiveName}\{subKeyPath}";
+
+                    bool isSubTreeGroup = group.Any(x => x.Category is "소프트웨어 잔상" or "확장자 연결");
+                    if (isSubTreeGroup)
+                    {
+                        if (!exportedSubTrees.Add(fullRegPath)) continue;
+                        using RegistryKey? subTreeKey = root.OpenSubKey(subKeyPath);
+                        if (subTreeKey != null)
+                        {
+                            AppendSubKeyTreeReg(sb, fullRegPath, subTreeKey);
+                            hasContent = true;
+                        }
+                        continue;
+                    }
+
+                    using RegistryKey? key = root.OpenSubKey(subKeyPath);
+                    if (key == null) continue;
+
+                    var valueNamesToExport = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var item in group)
+                    {
+                        if (item.Category == "MUI 캐시")
+                        {
+                            foreach (string valName in key.GetValueNames())
+                            {
+                                if (!string.IsNullOrEmpty(item.Data) && valName.Contains(item.Data, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    valueNamesToExport.Add(valName);
+                                }
+                            }
+                        }
+                        else if (!string.IsNullOrEmpty(item.Name))
+                        {
+                            valueNamesToExport.Add(item.Name);
+                        }
+                    }
+
+                    if (valueNamesToExport.Count == 0) continue;
+
+                    sb.AppendLine($"[{fullRegPath}]");
+                    foreach (string valName in valueNamesToExport)
+                    {
+                        object? val = key.GetValue(valName, null, RegistryValueOptions.DoNotExpandEnvironmentNames);
+                        if (val == null) continue;
+                        AppendRegValue(sb, valName, val, key.GetValueKind(valName));
+                        hasContent = true;
+                    }
+                    sb.AppendLine();
+                }
+
+                if (!hasContent) return null;
+
+                if (!Directory.Exists(AppSettingsService.BackupsDirectory))
+                {
+                    Directory.CreateDirectory(AppSettingsService.BackupsDirectory);
+                }
+
+                string filePath = Path.Combine(
+                    AppSettingsService.BackupsDirectory,
+                    $"RegistryBackup_{DateTime.Now:yyyyMMdd_HHmmss}.reg");
+                File.WriteAllText(filePath, sb.ToString(), Encoding.Unicode);
+                return filePath;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void AppendSubKeyTreeReg(StringBuilder sb, string fullRegPath, RegistryKey key)
+        {
+            sb.AppendLine($"[{fullRegPath}]");
+            foreach (string valName in key.GetValueNames())
+            {
+                object? val = key.GetValue(valName, null, RegistryValueOptions.DoNotExpandEnvironmentNames);
+                if (val == null) continue;
+                AppendRegValue(sb, valName, val, key.GetValueKind(valName));
+            }
+            sb.AppendLine();
+
+            foreach (string childName in key.GetSubKeyNames())
+            {
+                using RegistryKey? child = key.OpenSubKey(childName);
+                if (child != null)
+                {
+                    AppendSubKeyTreeReg(sb, $@"{fullRegPath}\{childName}", child);
+                }
+            }
+        }
+
+        private static void AppendRegValue(StringBuilder sb, string valueName, object value, RegistryValueKind kind)
+        {
+            string formattedName = string.IsNullOrEmpty(valueName)
+                ? "@"
+                : $"\"{EscapeRegString(valueName)}\"";
+
+            switch (kind)
+            {
+                case RegistryValueKind.String:
+                    sb.AppendLine($"{formattedName}=\"{EscapeRegString(value.ToString() ?? string.Empty)}\"");
+                    break;
+
+                case RegistryValueKind.DWord:
+                    uint dw = unchecked((uint)Convert.ToInt32(value, CultureInfo.InvariantCulture));
+                    sb.AppendLine($"{formattedName}=dword:{dw:x8}");
+                    break;
+
+                case RegistryValueKind.QWord:
+                    ulong qw = unchecked((ulong)Convert.ToInt64(value, CultureInfo.InvariantCulture));
+                    sb.AppendLine($"{formattedName}=hex(b):{FormatHexBytes(BitConverter.GetBytes(qw))}");
+                    break;
+
+                case RegistryValueKind.Binary:
+                    if (value is byte[] bytes)
+                        sb.AppendLine($"{formattedName}=hex:{FormatHexBytes(bytes)}");
+                    break;
+
+                case RegistryValueKind.ExpandString:
+                    byte[] expBytes = Encoding.Unicode.GetBytes((value.ToString() ?? string.Empty) + "\0");
+                    sb.AppendLine($"{formattedName}=hex(2):{FormatHexBytes(expBytes)}");
+                    break;
+
+                case RegistryValueKind.MultiString:
+                    string joined = value is string[] arr ? string.Join("\0", arr) + "\0\0" : "\0\0";
+                    byte[] multiBytes = Encoding.Unicode.GetBytes(joined);
+                    sb.AppendLine($"{formattedName}=hex(7):{FormatHexBytes(multiBytes)}");
+                    break;
+            }
+        }
+
+        private static string EscapeRegString(string input) =>
+            input.Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+        private static string FormatHexBytes(byte[] bytes) =>
+            string.Join(",", bytes.Select(b => b.ToString("x2", CultureInfo.InvariantCulture)));
+
+        private static (RegistryKey Root, string SubKeyPath) ParseRootAndSubKey(string keyPath)
+        {
+            RegistryKey root = keyPath.StartsWith("HKEY_LOCAL_MACHINE", StringComparison.OrdinalIgnoreCase) ||
+                               keyPath.StartsWith("HKLM", StringComparison.OrdinalIgnoreCase)
+                ? Registry.LocalMachine
+                : Registry.CurrentUser;
+
+            int slashIndex = keyPath.IndexOf('\\');
+            string subKeyPath = slashIndex != -1 ? keyPath[(slashIndex + 1)..] : keyPath;
+            return (root, subKeyPath);
+        }
+
         public static bool DeleteRegistryItem(RegistryItem item)
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(item.KeyPath)) return false;
 
-                RegistryKey root = item.KeyPath.StartsWith("HKEY_LOCAL_MACHINE") || item.KeyPath.StartsWith("HKLM")
-                    ? Registry.LocalMachine
-                    : Registry.CurrentUser;
+                var (root, subKeyPath) = ParseRootAndSubKey(item.KeyPath);
 
-                int slashIndex = item.KeyPath.IndexOf('\\');
-                string subKeyPath = slashIndex != -1 ? item.KeyPath[(slashIndex + 1)..] : item.KeyPath;
+                if (subKeyPath.Equals("StartupFolder", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!string.IsNullOrWhiteSpace(item.Data) && File.Exists(item.Data))
+                    {
+                        File.Delete(item.Data);
+                        using RegistryKey? approvedKey = root.OpenSubKey(
+                            @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder",
+                            writable: true);
+                        approvedKey?.DeleteValue(item.Name, false);
+                        return true;
+                    }
+                    return false;
+                }
 
                 if (item.Category is "소프트웨어 잔상" or "확장자 연결")
                 {
@@ -231,14 +541,16 @@ namespace SystemCareSuite.Services
                 if (item.Category == "MUI 캐시")
                 {
                     string target = item.Data;
+                    bool deletedAny = false;
                     foreach (string valName in key.GetValueNames())
                     {
                         if (!string.IsNullOrEmpty(target) && valName.Contains(target, StringComparison.OrdinalIgnoreCase))
                         {
                             key.DeleteValue(valName, false);
-                            return true;
+                            deletedAny = true;
                         }
                     }
+                    return deletedAny;
                 }
                 else if (!string.IsNullOrEmpty(item.Name))
                 {

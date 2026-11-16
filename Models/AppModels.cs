@@ -5,6 +5,36 @@ using System.Windows.Media;
 
 namespace SystemCareSuite.Models
 {
+    /// <summary>
+    /// UI 및 모델 바인딩에서 반복 생성되는 브러시를 Freeze하여 재사용합니다.
+    /// </summary>
+    public static class AppBrushes
+    {
+        public static SolidColorBrush NeonCyan { get; } = CreateFrozen(0xFF, 0x00, 0xF0, 0xFF);
+        public static SolidColorBrush NeonMint { get; } = CreateFrozen(0xFF, 0x00, 0xE5, 0xA3);
+        public static SolidColorBrush NeonAmber { get; } = CreateFrozen(0xFF, 0xFF, 0xB8, 0x00);
+        public static SolidColorBrush NeonCrimson { get; } = CreateFrozen(0xFF, 0xFF, 0x4D, 0x6D);
+        public static SolidColorBrush NeonPurple { get; } = CreateFrozen(0xFF, 189, 147, 249);
+        public static SolidColorBrush NeonBlue { get; } = CreateFrozen(0xFF, 88, 166, 255);
+        public static SolidColorBrush TextDefault { get; } = CreateFrozen(0xFF, 201, 209, 217);
+        public static SolidColorBrush LogTimestamp { get; } = CreateFrozen(0xFF, 0x6E, 0x76, 0x81);
+
+        public static SolidColorBrush BadgeCyanBg { get; } = CreateFrozen(45, 0, 240, 255);
+        public static SolidColorBrush BadgeMintBg { get; } = CreateFrozen(45, 0, 229, 163);
+        public static SolidColorBrush BadgeAmberBg { get; } = CreateFrozen(45, 255, 184, 0);
+        public static SolidColorBrush BadgePurpleBg { get; } = CreateFrozen(45, 189, 147, 249);
+        public static SolidColorBrush BadgeBlueBg { get; } = CreateFrozen(45, 88, 166, 255);
+        public static SolidColorBrush BadgeCrimsonBg { get; } = CreateFrozen(45, 255, 77, 109);
+        public static SolidColorBrush BadgeGrayBg { get; } = CreateFrozen(45, 139, 148, 158);
+
+        private static SolidColorBrush CreateFrozen(byte a, byte r, byte g, byte b)
+        {
+            var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+            brush.Freeze();
+            return brush;
+        }
+    }
+
     public class DriveStatusItem
     {
         public string DriveName { get; set; } = string.Empty;
@@ -17,10 +47,10 @@ namespace SystemCareSuite.Models
         public string UsageText => $"{UsedSizeGb:F1} GB / {TotalSizeGb:F1} GB (여유 {FreeSizeGb:F1} GB)";
         public string PercentText => $"{UsagePercent:F1}%";
         public Brush BarBrush => UsagePercent >= 90
-            ? new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x6D))
+            ? AppBrushes.NeonCrimson
             : UsagePercent >= 75
-                ? new SolidColorBrush(Color.FromRgb(0xFF, 0xB8, 0x00))
-                : new SolidColorBrush(Color.FromRgb(0x00, 0xF0, 0xFF));
+                ? AppBrushes.NeonAmber
+                : AppBrushes.NeonCyan;
     }
 
     public class ProcessMemoryItem
@@ -89,6 +119,8 @@ namespace SystemCareSuite.Models
     public class RegistryItem : INotifyPropertyChanged
     {
         private bool _isChecked = true;
+        private string _category = string.Empty;
+        private string _reason = string.Empty;
 
         public bool IsChecked
         {
@@ -96,30 +128,54 @@ namespace SystemCareSuite.Models
             set { _isChecked = value; OnPropertyChanged(); }
         }
 
-        public string Category { get; set; } = string.Empty;
+        public string Category
+        {
+            get => _category;
+            set
+            {
+                if (_category == value) return;
+                _category = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(BadgeBackground));
+                OnPropertyChanged(nameof(BadgeForeground));
+            }
+        }
+
         public string Name { get; set; } = string.Empty;
         public string Data { get; set; } = string.Empty;
         public string KeyPath { get; set; } = string.Empty;
-        public string Reason { get; set; } = string.Empty;
+
+        public string Reason
+        {
+            get => _reason;
+            set
+            {
+                if (_reason == value) return;
+                _reason = value;
+                OnPropertyChanged();
+            }
+        }
 
         public Brush BadgeBackground => Category switch
         {
-            "시작 프로그램" => new SolidColorBrush(Color.FromArgb(45, 0, 240, 255)),
-            "소프트웨어 잔상" => new SolidColorBrush(Color.FromArgb(45, 0, 229, 163)),
-            "MUI 캐시" => new SolidColorBrush(Color.FromArgb(45, 255, 184, 0)),
-            "확장자 연결" => new SolidColorBrush(Color.FromArgb(45, 189, 147, 249)),
-            "정상 시작앱" => new SolidColorBrush(Color.FromArgb(45, 88, 166, 255)),
-            _ => new SolidColorBrush(Color.FromArgb(45, 139, 148, 158))
+            "시작 프로그램" => AppBrushes.BadgeCyanBg,
+            "소프트웨어 잔상" => AppBrushes.BadgeMintBg,
+            "MUI 캐시" => AppBrushes.BadgeAmberBg,
+            "확장자 연결" => AppBrushes.BadgePurpleBg,
+            "정상 시작앱" => AppBrushes.BadgeBlueBg,
+            "중지된 시작앱" => AppBrushes.BadgeCrimsonBg,
+            _ => AppBrushes.BadgeGrayBg
         };
 
         public Brush BadgeForeground => Category switch
         {
-            "시작 프로그램" => new SolidColorBrush(Color.FromRgb(0, 240, 255)),
-            "소프트웨어 잔상" => new SolidColorBrush(Color.FromRgb(0, 229, 163)),
-            "MUI 캐시" => new SolidColorBrush(Color.FromRgb(255, 184, 0)),
-            "확장자 연결" => new SolidColorBrush(Color.FromRgb(189, 147, 249)),
-            "정상 시작앱" => new SolidColorBrush(Color.FromRgb(88, 166, 255)),
-            _ => new SolidColorBrush(Color.FromRgb(201, 209, 217))
+            "시작 프로그램" => AppBrushes.NeonCyan,
+            "소프트웨어 잔상" => AppBrushes.NeonMint,
+            "MUI 캐시" => AppBrushes.NeonAmber,
+            "확장자 연결" => AppBrushes.NeonPurple,
+            "정상 시작앱" => AppBrushes.NeonBlue,
+            "중지된 시작앱" => AppBrushes.NeonCrimson,
+            _ => AppBrushes.TextDefault
         };
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -176,26 +232,50 @@ namespace SystemCareSuite.Models
 
         public Brush CategoryBrush => Category switch
         {
-            "사용자 임시" or "시스템 임시" => new SolidColorBrush(Color.FromArgb(45, 0, 240, 255)),
-            "프리패치" => new SolidColorBrush(Color.FromArgb(45, 0, 229, 163)),
-            "업데이트 캐시" or "배달 최적화" => new SolidColorBrush(Color.FromArgb(45, 255, 184, 0)),
-            "디스코드 캐시" => new SolidColorBrush(Color.FromArgb(45, 189, 147, 249)),
-            "개발 캐시" => new SolidColorBrush(Color.FromArgb(45, 255, 77, 109)),
-            _ => new SolidColorBrush(Color.FromArgb(45, 139, 148, 158))
+            "사용자 임시" or "시스템 임시" => AppBrushes.BadgeCyanBg,
+            "프리패치" => AppBrushes.BadgeMintBg,
+            "업데이트 캐시" or "배달 최적화" or "오류·썸네일" => AppBrushes.BadgeAmberBg,
+            "디스코드 캐시" or "브라우저 캐시" => AppBrushes.BadgePurpleBg,
+            "개발 캐시" or "패키지 캐시" => AppBrushes.BadgeCrimsonBg,
+            "휴지통" => AppBrushes.BadgeBlueBg,
+            _ => AppBrushes.BadgeGrayBg
         };
 
         public Brush CategoryForeground => Category switch
         {
-            "사용자 임시" or "시스템 임시" => new SolidColorBrush(Color.FromRgb(0, 240, 255)),
-            "프리패치" => new SolidColorBrush(Color.FromRgb(0, 229, 163)),
-            "업데이트 캐시" or "배달 최적화" => new SolidColorBrush(Color.FromRgb(255, 184, 0)),
-            "디스코드 캐시" => new SolidColorBrush(Color.FromRgb(189, 147, 249)),
-            "개발 캐시" => new SolidColorBrush(Color.FromRgb(255, 77, 109)),
-            _ => new SolidColorBrush(Color.FromRgb(201, 209, 217))
+            "사용자 임시" or "시스템 임시" => AppBrushes.NeonCyan,
+            "프리패치" => AppBrushes.NeonMint,
+            "업데이트 캐시" or "배달 최적화" or "오류·썸네일" => AppBrushes.NeonAmber,
+            "디스코드 캐시" or "브라우저 캐시" => AppBrushes.NeonPurple,
+            "개발 캐시" or "패키지 캐시" => AppBrushes.NeonCrimson,
+            "휴지통" => AppBrushes.NeonBlue,
+            _ => AppBrushes.TextDefault
         };
 
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string? name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+
+    public class CleanerScanResult
+    {
+        public List<CleanerFileItem> Files { get; init; } = [];
+        public List<string> TruncatedCategories { get; init; } = [];
+        public int SkippedRecentCount { get; set; }
+    }
+
+    public class AppSettings
+    {
+        public string DevRootPath { get; set; } = @"F:\Project";
+        public Dictionary<string, bool> CleanerTargetStates { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public bool ProtectRecentCleanerFiles { get; set; } = true;
+        public bool AutoRamBoostEnabled { get; set; }
+        public string? LastSxsActual { get; set; }
+        public string? LastSxsShared { get; set; }
+        public string? LastSxsExpected { get; set; }
+        public string? LastSxsStatus { get; set; }
+        public bool? LastSxsRecommended { get; set; }
+        public double? LastSxsActualMb { get; set; }
+        public string? LastSxsAnalyzedAt { get; set; }
     }
 }

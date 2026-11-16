@@ -224,7 +224,10 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Grid.Column="0" Text="시스템 업타임 &amp; 부스트" FontSize="13" FontWeight="SemiBold" Foreground="#8B949E"/>
-                                <TextBlock Grid.Column="1" Text="ACTIVE" FontSize="11.5" FontWeight="Bold" Foreground="#00F0FF"/>
+                                <CheckBox Grid.Column="1" x:Name="ChkAutoRamBoost" Content="88%↑ 자동 부스트"
+                                          FontSize="11.5" FontWeight="SemiBold" Foreground="#00F0FF"
+                                          VerticalAlignment="Center" Cursor="Hand"
+                                          Checked="ChkAutoRamBoost_Changed" Unchecked="ChkAutoRamBoost_Changed"/>
                             </Grid>
                             <TextBlock x:Name="TxtUptimeMain" Text="00:00:00" FontSize="26" FontWeight="ExtraBold" Foreground="#F0F6FC" Margin="0,10,0,8"/>
                             <Border Background="#990E1420" CornerRadius="6" Padding="10,7" BorderBrush="#33FFFFFF" BorderThickness="1">
@@ -311,7 +314,16 @@
                                 <ItemsControl x:Name="IcTopProcesses">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Background="#990E1420" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="8" Padding="12,9" Margin="0,0,4,8">
+                                            <Border Background="#990E1420" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="8" Padding="12,9" Margin="0,0,4,8"
+                                                    Cursor="Hand" Tag="{Binding}" ToolTip="우클릭: RAM 제외 추가 · 파일 위치 열기 · 프로세스 종료">
+                                                <Border.ContextMenu>
+                                                    <ContextMenu Background="#151E2E" Foreground="#F0F6FC" BorderBrush="#30405A">
+                                                        <MenuItem Header="🛡️ RAM 부스트 제외 목록에 추가" Click="ProcMenuExclude_Click"/>
+                                                        <MenuItem Header="📂 실행 파일 위치 열기" Click="ProcMenuOpenLocation_Click"/>
+                                                        <Separator Background="#30405A"/>
+                                                        <MenuItem Header="🛑 프로세스 종료" Foreground="#FF4D6D" Click="ProcMenuKill_Click"/>
+                                                    </ContextMenu>
+                                                </Border.ContextMenu>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto"/>
@@ -386,8 +398,15 @@
                             <TextBlock Grid.Column="0" Text="📂 개발 폴더 경로:" FontSize="13" FontWeight="SemiBold" Foreground="#8B949E" VerticalAlignment="Center" Margin="0,0,10,0"/>
                             <TextBox Grid.Column="1" x:Name="TxtDevRootPath" Text="F:\Project"
                                      Background="#0B0F17" Foreground="#F0F6FC" BorderBrush="#30405A" BorderThickness="1"
-                                     Padding="8,4" FontSize="13" VerticalContentAlignment="Center"/>
+                                     Padding="8,4" FontSize="13" VerticalContentAlignment="Center"
+                                     LostFocus="TxtDevRootPath_LostFocus"/>
                             <Button Grid.Column="2" Content="폴더 변경..." Style="{StaticResource OutlineActionButton}" Padding="10,4" FontSize="12" Margin="8,0,12,0" Click="BtnBrowseDevRoot_Click"/>
+
+                            <CheckBox Grid.Column="3" x:Name="ChkProtectRecentFiles" Content="🛡️ 최근 24시간 파일 보호"
+                                      IsChecked="True" FontSize="12.5" FontWeight="SemiBold" Foreground="#00E5A3"
+                                      VerticalAlignment="Center" Margin="4,0,12,0" Cursor="Hand"
+                                      ToolTip="임시/캐시 폴더에서 최근 24시간 이내에 수정된 파일은 안전을 위해 건너뜁니다."
+                                      Checked="ChkProtectRecentFiles_Changed" Unchecked="ChkProtectRecentFiles_Changed"/>
 
                             <!-- View Mode Sub-tabs -->
                             <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
@@ -417,7 +436,11 @@
                                 <ComboBoxItem Content="업데이트 캐시"/>
                                 <ComboBoxItem Content="배달 최적화"/>
                                 <ComboBoxItem Content="디스코드 캐시"/>
+                                <ComboBoxItem Content="브라우저 캐시"/>
+                                <ComboBoxItem Content="오류·썸네일"/>
                                 <ComboBoxItem Content="개발 캐시"/>
+                                <ComboBoxItem Content="패키지 캐시"/>
+                                <ComboBoxItem Content="휴지통"/>
                             </ComboBox>
 
                             <TextBlock Grid.Column="2" Text="검색:" FontSize="13" FontWeight="SemiBold" Foreground="#8B949E" VerticalAlignment="Center" Margin="14,0,8,0"/>
@@ -578,7 +601,7 @@
                                                         <ColumnDefinition Width="*"/>
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
-                                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" VerticalAlignment="Center" Margin="0,0,12,0" Click="CleanerTargetCheckBox_Click"/>
                                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,10,0">
                                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                                             <Border Background="#1B2A40" CornerRadius="4" Padding="6,2" Margin="0,0,8,0" VerticalAlignment="Center">
@@ -662,9 +685,11 @@
                         <TextBlock Text="유령 시작프로그램, 삭제된 소프트웨어 잔상, 깨진 확장자 연결 및 MUI 캐시를 정밀 진단합니다." FontSize="13" Foreground="#8B949E" Margin="0,5,0,0" TextWrapping="Wrap"/>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button x:Name="BtnViewActiveStartup" Style="{StaticResource OutlineActionButton}" Content="🚀 정상 시작앱 조회" Margin="0,0,8,0" Click="BtnViewActiveStartup_Click"/>
-                        <Button x:Name="BtnRegScan" Style="{StaticResource OutlineActionButton}" BorderBrush="#00F0FF" Foreground="#00F0FF" Content="🔍 문제 레지스트리 스캔" Margin="0,0,8,0" Click="BtnRegScan_Click"/>
-                        <Button x:Name="BtnRegClean" Style="{StaticResource NeonActionButton}" Background="{StaticResource NeonCrimsonBrush}" Foreground="White" Content="🗑️ 선택 항목 정리" Click="BtnRegClean_Click"/>
+                        <Button x:Name="BtnRegOpenBackups" Style="{StaticResource OutlineActionButton}" Padding="12,9" Content="📂 백업 폴더" Margin="0,0,8,0" Click="BtnRegOpenBackups_Click" ToolTip="정리 전 자동 저장된 .reg 백업 파일 폴더 열기"/>
+                        <Button x:Name="BtnViewActiveStartup" Style="{StaticResource OutlineActionButton}" Padding="12,9" Content="🚀 시작앱 조회" Margin="0,0,8,0" Click="BtnViewActiveStartup_Click"/>
+                        <Button x:Name="BtnRegToggleStartup" Style="{StaticResource OutlineActionButton}" Padding="12,9" BorderBrush="#FFB800" Foreground="#FFB800" Content="⏯️ 사용/중지 전환" Margin="0,0,8,0" Click="BtnRegToggleStartup_Click" ToolTip="정상 시작앱/중지된 시작앱을 삭제하지 않고 사용 여부만 전환합니다"/>
+                        <Button x:Name="BtnRegScan" Style="{StaticResource OutlineActionButton}" Padding="14,9" BorderBrush="#00F0FF" Foreground="#00F0FF" Content="🔍 문제 스캔" Margin="0,0,8,0" Click="BtnRegScan_Click"/>
+                        <Button x:Name="BtnRegClean" Style="{StaticResource NeonActionButton}" Padding="14,9" Background="{StaticResource NeonCrimsonBrush}" Foreground="White" Content="🗑️ 선택 정리" Click="BtnRegClean_Click"/>
                     </StackPanel>
                 </Grid>
 
@@ -686,6 +711,7 @@
                             <ComboBoxItem Content="MUI 캐시"/>
                             <ComboBoxItem Content="확장자 연결"/>
                             <ComboBoxItem Content="정상 시작앱"/>
+                            <ComboBoxItem Content="중지된 시작앱"/>
                         </ComboBox>
 
                         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
@@ -719,6 +745,11 @@
                               RowHeight="38"
                               SelectionMode="Single"
                               SelectionUnit="FullRow">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu Background="#151E2E" Foreground="#F0F6FC" BorderBrush="#30405A">
+                                <MenuItem Header="⏯️ 시작앱 사용/중지 전환" Click="BtnRegToggleStartup_Click"/>
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
                         <DataGrid.Resources>
                             <Style TargetType="DataGridColumnHeader">
                                 <Setter Property="Background" Value="#1B2538"/>
@@ -830,17 +861,37 @@
                 <!-- Action Buttons Bar -->
                 <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Padding="16,12" Margin="0,0,0,14">
                     <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button x:Name="BtnSxsAnalyze" Style="{StaticResource NeonActionButton}" Content="🔍 저장소 분석 (Analyze)" Margin="0,0,10,0" Click="BtnSxsAnalyze_Click"/>
-                            <Button x:Name="BtnSxsCleanup" Style="{StaticResource OutlineActionButton}" BorderBrush="#00E5A3" Foreground="#00E5A3" Content="🧹 일반 정리 (Cleanup)" Margin="0,0,10,0" Click="BtnSxsCleanup_Click"/>
-                            <Button x:Name="BtnSxsResetBase" Style="{StaticResource OutlineActionButton}" BorderBrush="#FFB800" Foreground="#FFB800" Content="🔥 심층 정리 (ResetBase)" Margin="0,0,10,0" Click="BtnSxsResetBase_Click"/>
-                            <Button x:Name="BtnSxsCancel" Style="{StaticResource OutlineActionButton}" Content="🛑 중지" IsEnabled="False" Click="BtnSxsCancel_Click"/>
-                        </StackPanel>
-                        <Button Grid.Column="1" x:Name="BtnSxsSaveLog" Style="{StaticResource OutlineActionButton}" Content="💾 상세 로그 저장" VerticalAlignment="Center" Click="BtnSxsSaveLog_Click"/>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button x:Name="BtnSxsAnalyze" Style="{StaticResource NeonActionButton}" Content="🔍 저장소 분석 (Analyze)" Margin="0,0,10,0" Click="BtnSxsAnalyze_Click"/>
+                                <Button x:Name="BtnSxsCleanup" Style="{StaticResource OutlineActionButton}" BorderBrush="#00E5A3" Foreground="#00E5A3" Content="🧹 일반 정리 (Cleanup)" Margin="0,0,10,0" Click="BtnSxsCleanup_Click"/>
+                                <Button x:Name="BtnSxsResetBase" Style="{StaticResource OutlineActionButton}" BorderBrush="#FFB800" Foreground="#FFB800" Content="🔥 심층 정리 (ResetBase)" Margin="0,0,10,0" Click="BtnSxsResetBase_Click"/>
+                                <Button x:Name="BtnSxsCancel" Style="{StaticResource OutlineActionButton}" Content="🛑 중지" IsEnabled="False" Click="BtnSxsCancel_Click"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" x:Name="BtnSxsSaveLog" Style="{StaticResource OutlineActionButton}" Content="💾 상세 로그 저장" VerticalAlignment="Center" Click="BtnSxsSaveLog_Click"/>
+                        </Grid>
+
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="🛠️ Windows 시스템 무결성 복구:" FontSize="12.5" FontWeight="SemiBold" Foreground="#8B949E" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <Button x:Name="BtnSxsSfc" Style="{StaticResource OutlineActionButton}" Padding="12,6" FontSize="12.5" BorderBrush="#BD93F9" Foreground="#BD93F9" Content="🩺 시스템 파일 검사 (SFC /scannow)" Margin="0,0,8,0" Click="BtnSxsSfc_Click"/>
+                                <Button x:Name="BtnSxsRestoreHealth" Style="{StaticResource OutlineActionButton}" Padding="12,6" FontSize="12.5" BorderBrush="#58A6FF" Foreground="#58A6FF" Content="🚑 이미지 복구 (DISM /RestoreHealth)" Click="BtnSxsRestoreHealth_Click"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" x:Name="TxtSxsLastAnalyzed" Text="" FontSize="11.5" Foreground="#6E7681" VerticalAlignment="Center"/>
+                        </Grid>
                     </Grid>
                 </Border>
 

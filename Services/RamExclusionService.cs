@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using SystemCareSuite.Models;
 
@@ -8,38 +7,8 @@ namespace SystemCareSuite.Services
 {
     public static class RamExclusionService
     {
-        private static readonly string SettingsFilePath;
-        private static readonly JsonSerializerOptions JsonOptions = new()
-        {
-            WriteIndented = true,
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        };
-
-        static RamExclusionService()
-        {
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            string localAppDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SystemCareSuite");
-
-            // 기본적으로 로컬 실행 디렉토리에 우선 생성 시도, 쓰기 권한이 없으면 LocalAppData로 fallback
-            string candidatePath = Path.Combine(baseDir, "whitelist.json");
-            try
-            {
-                if (!Directory.Exists(localAppDataDir))
-                {
-                    Directory.CreateDirectory(localAppDataDir);
-                }
-
-                // BaseDirectory 쓰기 테스트
-                string testFile = Path.Combine(baseDir, $".perm_test_{Guid.NewGuid():N}");
-                File.WriteAllText(testFile, "test");
-                File.Delete(testFile);
-                SettingsFilePath = candidatePath;
-            }
-            catch
-            {
-                SettingsFilePath = Path.Combine(localAppDataDir, "whitelist.json");
-            }
-        }
+        private static readonly string SettingsFilePath =
+            Path.Combine(AppSettingsService.StorageDirectory, "whitelist.json");
 
         public static List<RamExclusionItem> LoadExclusions()
         {
@@ -48,7 +17,7 @@ namespace SystemCareSuite.Services
                 if (File.Exists(SettingsFilePath))
                 {
                     string json = File.ReadAllText(SettingsFilePath);
-                    var loaded = JsonSerializer.Deserialize<List<RamExclusionItem>>(json, JsonOptions);
+                    var loaded = JsonSerializer.Deserialize<List<RamExclusionItem>>(json, AppSettingsService.JsonOptions);
                     if (loaded != null && loaded.Count > 0)
                     {
                         return loaded;
@@ -78,10 +47,32 @@ namespace SystemCareSuite.Services
                     Directory.CreateDirectory(dir);
                 }
 
-                string json = JsonSerializer.Serialize(items, JsonOptions);
+                string json = JsonSerializer.Serialize(items, AppSettingsService.JsonOptions);
                 File.WriteAllText(SettingsFilePath, json);
             }
             catch { }
+        }
+
+        public static bool AddExclusionIfNotExists(string processName, string? displayName = null)
+        {
+            if (string.IsNullOrWhiteSpace(processName)) return false;
+
+            string cleanName = processName.Trim();
+            if (cleanName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                cleanName = Path.GetFileNameWithoutExtension(cleanName);
+
+            var list = LoadExclusions();
+            if (list.Any(x => x.ProcessName.Equals(cleanName, StringComparison.OrdinalIgnoreCase)))
+                return false;
+
+            list.Add(new RamExclusionItem
+            {
+                ProcessName = cleanName,
+                DisplayName = string.IsNullOrWhiteSpace(displayName) ? cleanName : displayName.Trim(),
+                IsEnabled = true
+            });
+            SaveExclusions(list);
+            return true;
         }
 
         public static List<string> GetRunningProcessNames()

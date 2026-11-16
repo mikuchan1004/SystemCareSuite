@@ -153,11 +153,18 @@ namespace SystemCareSuite.Services
             return list;
         }
 
+        private static readonly HashSet<string> ProtectedSystemProcesses = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "System", "Idle", "Registry", "smss", "csrss", "wininit",
+            "services", "lsass", "dwm", "Memory Compression", "fontdrvhost"
+        };
+
         public (double FreedMb, int OptimizedCount, int SkippedCount) OptimizeRam(IEnumerable<string>? excludedProcesses = null)
         {
             var before = GetRamStatus();
             int count = 0;
             int skipped = 0;
+            int selfPid = Environment.ProcessId;
 
             var excludedSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (excludedProcesses != null)
@@ -180,7 +187,9 @@ namespace SystemCareSuite.Services
                 {
                     if (!proc.HasExited && proc.Handle != IntPtr.Zero)
                     {
-                        if (excludedSet.Contains(proc.ProcessName))
+                        if (proc.Id == selfPid ||
+                            ProtectedSystemProcesses.Contains(proc.ProcessName) ||
+                            excludedSet.Contains(proc.ProcessName))
                         {
                             skipped++;
                             continue;
@@ -201,8 +210,49 @@ namespace SystemCareSuite.Services
             GC.WaitForPendingFinalizers();
 
             var after = GetRamStatus();
-            double freedMb = Math.Max(12.0, (after.FreeGb - before.FreeGb) * 1024.0);
+            double freedMb = Math.Max(0.0, (after.FreeGb - before.FreeGb) * 1024.0);
             return (freedMb, count, skipped);
+        }
+
+        public static string? GetProcessExecutablePath(int pid)
+        {
+            try
+            {
+                using var proc = Process.GetProcessById(pid);
+                return proc.MainModule?.FileName;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static bool TryTerminateProcess(int pid, out string errorMessage)
+        {
+            errorMessage = string.Empty;
+            if (pid == Environment.ProcessId)
+            {
+                errorMessage = "현재 실행 중인 SystemCareSuite는 종료할 수 없습니다.";
+                return false;
+            }
+
+            try
+            {
+                using var proc = Process.GetProcessById(pid);
+                if (ProtectedSystemProcesses.Contains(proc.ProcessName))
+                {
+                    errorMessage = $"'{proc.ProcessName}'은(는) Windows 핵심 시스템 프로세스이므로 종료할 수 없습니다.";
+                    return false;
+                }
+
+                proc.Kill(entireProcessTree: true);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+                return false;
+            }
         }
 
         public void Dispose()

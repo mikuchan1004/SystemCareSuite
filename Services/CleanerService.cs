@@ -10,6 +10,24 @@ namespace SystemCareSuite.Services
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern uint GetCompressedFileSizeW(string lpFileName, out uint lpFileSizeHigh);
 
+        [StructLayout(LayoutKind.Sequential, Pack = 0)]
+        private struct SHQUERYRBINFO
+        {
+            public int cbSize;
+            public long i64Size;
+            public long i64NumItems;
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern int SHQueryRecycleBinW(string? pszRootPath, ref SHQUERYRBINFO pSHQueryRBInfo);
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern int SHEmptyRecycleBinW(IntPtr hwnd, string? pszRootPath, uint dwFlags);
+
+        private const uint SHERB_NOCONFIRMATION = 0x00000001;
+        private const uint SHERB_NOPROGRESSUI = 0x00000002;
+        private const uint SHERB_NOSOUND = 0x00000004;
+
         /// <summary>
         /// 스파스(Sparse) 파일이나 NTFS 압축 파일의 경우 논리적 크기(FileInfo.Length) 대신
         /// 실제 디스크(SSD)에 할당된 물리적 점유 크기를 반환합니다.
@@ -82,11 +100,43 @@ namespace SystemCareSuite.Services
             },
             new CleanerTargetItem
             {
+                Id = "browser_cache",
+                Category = "앱 캐시",
+                Title = "브라우저 캐시 (Chrome / Edge)",
+                Description = "Chrome·Edge의 웹 캐시 및 GPU 캐시 정리 (로그인·북마크 유지)",
+                IsSelected = true
+            },
+            new CleanerTargetItem
+            {
+                Id = "wer_thumb",
+                Category = "시스템",
+                Title = "오류 보고서 & 썸네일 캐시",
+                Description = "Windows 오류 보고서(WER), 크래시 덤프 및 탐색기 썸네일 캐시 정리",
+                IsSelected = true
+            },
+            new CleanerTargetItem
+            {
                 Id = "dev_projects",
                 Category = "개발 환경",
                 Title = "개발 프로젝트 빌드 캐시 (bin / obj / .vs)",
                 Description = "지정된 개발 폴더 내 빌드 중간 결과물 정리 (Publish 폴더 및 현재 앱 보호)",
                 IsSelected = true
+            },
+            new CleanerTargetItem
+            {
+                Id = "pkg_cache",
+                Category = "개발 환경",
+                Title = "패키지 관리자 캐시 (NuGet / npm)",
+                Description = "로컬 NuGet(http-cache/v3-cache) 및 npm-cache 임시 패키지 캐시 정리",
+                IsSelected = false
+            },
+            new CleanerTargetItem
+            {
+                Id = "recycle_bin",
+                Category = "시스템",
+                Title = "Windows 휴지통 비우기",
+                Description = "휴지통에 보관된 삭제 대기 파일 일괄 영구 비우기",
+                IsSelected = false
             }
         ];
 
@@ -342,66 +392,292 @@ namespace SystemCareSuite.Services
         // DETAILED FILE SCAN & SELECTIVE DELETE
         // =====================================================================
 
-        public static List<CleanerFileItem> ScanDetailedFiles(
+        public const int DefaultMaxFilesPerCategory = 2500;
+        public const string RecycleBinVirtualPath = "SHELL:::{645FF040-5081-101B-9F08-00AA002F954E}";
+
+        public static CleanerScanResult ScanDetailedFiles(
             IEnumerable<string> targetIds,
             string devRootPath,
-            IProgress<string>? log = null,
-            int maxPerCategory = 2500)
+            bool protectRecentFiles,
+            IProgress<(double Percent, string? Log)>? progress = null,
+            int maxPerCategory = DefaultMaxFilesPerCategory)
         {
+            var idList = targetIds.ToList();
             var results = new List<CleanerFileItem>();
+            var truncatedCategories = new List<string>();
+            int skippedRecent = 0;
+            DateTime cutoffUtc = DateTime.UtcNow.AddHours(-24);
 
-            foreach (var tid in targetIds)
+            for (int i = 0; i < idList.Count; i++)
             {
+                string tid = idList[i];
+                int targetCount = 0;
+                string? categoryLabel = null;
+
                 switch (tid)
                 {
                     case "user_temp":
-                        log?.Report(" • 사용자 임시 파일 목록 스캔 중...");
-                        CollectFilesRecursive(new DirectoryInfo(Path.GetTempPath()), "사용자 임시", tid, results, maxPerCategory);
+                        categoryLabel = "사용자 임시";
+                        progress?.Report((i * 100.0 / idList.Count, " • 사용자 임시 파일 목록 스캔 중..."));
+                        CollectFilesRecursive(new DirectoryInfo(Path.GetTempPath()), categoryLabel, tid, results, maxPerCategory, ref targetCount, protectRecentFiles ? cutoffUtc : null, ref skippedRecent);
                         break;
 
                     case "sys_temp":
-                        log?.Report(" • Windows 시스템 임시 파일 목록 스캔 중...");
-                        CollectFilesRecursive(new DirectoryInfo(@"C:\Windows\Temp"), "시스템 임시", tid, results, maxPerCategory);
+                        categoryLabel = "시스템 임시";
+                        progress?.Report((i * 100.0 / idList.Count, " • Windows 시스템 임시 파일 목록 스캔 중..."));
+                        CollectFilesRecursive(new DirectoryInfo(@"C:\Windows\Temp"), categoryLabel, tid, results, maxPerCategory, ref targetCount, protectRecentFiles ? cutoffUtc : null, ref skippedRecent);
                         break;
 
                     case "prefetch":
-                        log?.Report(" • 시스템 프리패치 목록 스캔 중...");
-                        CollectFilesRecursive(new DirectoryInfo(@"C:\Windows\Prefetch"), "프리패치", tid, results, maxPerCategory);
+                        categoryLabel = "프리패치";
+                        progress?.Report((i * 100.0 / idList.Count, " • 시스템 프리패치 목록 스캔 중..."));
+                        CollectFilesRecursive(new DirectoryInfo(@"C:\Windows\Prefetch"), categoryLabel, tid, results, maxPerCategory, ref targetCount, protectRecentFiles ? cutoffUtc : null, ref skippedRecent);
                         break;
 
                     case "wu_cache":
-                        log?.Report(" • Windows 업데이트 캐시 목록 스캔 중...");
-                        CollectFilesRecursive(new DirectoryInfo(@"C:\Windows\SoftwareDistribution\Download"), "업데이트 캐시", tid, results, maxPerCategory);
+                        categoryLabel = "업데이트 캐시";
+                        progress?.Report((i * 100.0 / idList.Count, " • Windows 업데이트 캐시 목록 스캔 중..."));
+                        CollectFilesRecursive(new DirectoryInfo(@"C:\Windows\SoftwareDistribution\Download"), categoryLabel, tid, results, maxPerCategory, ref targetCount, null, ref skippedRecent);
                         break;
 
                     case "do_cache":
-                        log?.Report(" • 배달 최적화 캐시 목록 스캔 중...");
-                        CollectFilesRecursive(new DirectoryInfo(@"C:\Windows\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache"), "배달 최적화", tid, results, maxPerCategory);
+                        categoryLabel = "배달 최적화";
+                        progress?.Report((i * 100.0 / idList.Count, " • 배달 최적화 캐시 목록 스캔 중..."));
+                        CollectFilesRecursive(new DirectoryInfo(@"C:\Windows\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache"), categoryLabel, tid, results, maxPerCategory, ref targetCount, null, ref skippedRecent);
                         break;
 
                     case "discord":
-                        log?.Report(" • Discord 캐시 파일 목록 스캔 중...");
+                        categoryLabel = "디스코드 캐시";
+                        progress?.Report((i * 100.0 / idList.Count, " • Discord 캐시 파일 목록 스캔 중..."));
                         string discordBase = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "discord");
-                        string[] subDirs = ["Cache", "Code Cache", "GPUCache"];
-                        foreach (var sub in subDirs)
+                        foreach (var sub in new[] { "Cache", "Code Cache", "GPUCache" })
                         {
                             string full = Path.Combine(discordBase, sub);
                             if (Directory.Exists(full))
-                                CollectFilesRecursive(new DirectoryInfo(full), "디스코드 캐시", tid, results, maxPerCategory);
+                                CollectFilesRecursive(new DirectoryInfo(full), categoryLabel, tid, results, maxPerCategory, ref targetCount, protectRecentFiles ? cutoffUtc : null, ref skippedRecent);
                         }
+                        break;
+
+                    case "browser_cache":
+                        categoryLabel = "브라우저 캐시";
+                        progress?.Report((i * 100.0 / idList.Count, " • Chrome / Edge 브라우저 캐시 스캔 중..."));
+                        CollectBrowserCaches(categoryLabel, tid, results, maxPerCategory, ref targetCount, protectRecentFiles ? cutoffUtc : null, ref skippedRecent);
+                        break;
+
+                    case "wer_thumb":
+                        categoryLabel = "오류·썸네일";
+                        progress?.Report((i * 100.0 / idList.Count, " • 오류 보고서 및 썸네일 캐시 스캔 중..."));
+                        CollectWerAndThumbnailCaches(categoryLabel, tid, results, maxPerCategory, ref targetCount, protectRecentFiles ? cutoffUtc : null, ref skippedRecent);
                         break;
 
                     case "dev_projects":
-                        log?.Report(" • 개발 프로젝트 빌드 파일 목록 스캔 중...");
+                        categoryLabel = "개발 캐시";
+                        progress?.Report((i * 100.0 / idList.Count, " • 개발 프로젝트 빌드 파일 목록 스캔 중..."));
                         if (!string.IsNullOrWhiteSpace(devRootPath) && Directory.Exists(devRootPath))
                         {
-                            CollectDevFilesRecursive(new DirectoryInfo(devRootPath), results, maxPerCategory);
+                            CollectDevFilesRecursive(new DirectoryInfo(devRootPath), results, maxPerCategory, ref targetCount);
                         }
                         break;
+
+                    case "pkg_cache":
+                        categoryLabel = "패키지 캐시";
+                        progress?.Report((i * 100.0 / idList.Count, " • NuGet / npm 패키지 캐시 스캔 중..."));
+                        CollectPackageCaches(categoryLabel, tid, results, maxPerCategory, ref targetCount);
+                        break;
+
+                    case "recycle_bin":
+                        categoryLabel = "휴지통";
+                        progress?.Report((i * 100.0 / idList.Count, " • Windows 휴지통 상태 확인 중..."));
+                        CollectRecycleBinItem(results);
+                        break;
                 }
+
+                if (categoryLabel != null && targetCount >= maxPerCategory)
+                {
+                    truncatedCategories.Add(categoryLabel);
+                }
+
+                progress?.Report(((i + 1) * 100.0 / idList.Count, null));
             }
 
-            return results;
+            return new CleanerScanResult
+            {
+                Files = results,
+                TruncatedCategories = truncatedCategories,
+                SkippedRecentCount = skippedRecent
+            };
+        }
+
+        private static void CollectBrowserCaches(
+            string category,
+            string targetId,
+            List<CleanerFileItem> results,
+            int maxItems,
+            ref int targetCount,
+            DateTime? cutoffUtc,
+            ref int skippedRecent)
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string[] userDataRoots =
+            [
+                Path.Combine(localAppData, "Google", "Chrome", "User Data"),
+                Path.Combine(localAppData, "Microsoft", "Edge", "User Data")
+            ];
+            string[] cacheSubDirs = ["Cache", "Code Cache", "GPUCache"];
+
+            foreach (string root in userDataRoots)
+            {
+                if (!Directory.Exists(root) || targetCount >= maxItems) continue;
+                try
+                {
+                    foreach (var profileDir in new DirectoryInfo(root).GetDirectories())
+                    {
+                        if (!profileDir.Name.Equals("Default", StringComparison.OrdinalIgnoreCase) &&
+                            !profileDir.Name.StartsWith("Profile ", StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        foreach (var sub in cacheSubDirs)
+                        {
+                            string cachePath = Path.Combine(profileDir.FullName, sub);
+                            if (Directory.Exists(cachePath))
+                            {
+                                CollectFilesRecursive(new DirectoryInfo(cachePath), category, targetId, results, maxItems, ref targetCount, cutoffUtc, ref skippedRecent);
+                            }
+                            if (targetCount >= maxItems) return;
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+
+        private static void CollectWerAndThumbnailCaches(
+            string category,
+            string targetId,
+            List<CleanerFileItem> results,
+            int maxItems,
+            ref int targetCount,
+            DateTime? cutoffUtc,
+            ref int skippedRecent)
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string explorerDir = Path.Combine(localAppData, "Microsoft", "Windows", "Explorer");
+
+            if (Directory.Exists(explorerDir) && targetCount < maxItems)
+            {
+                try
+                {
+                    foreach (var fi in new DirectoryInfo(explorerDir).GetFiles())
+                    {
+                        if (!fi.Name.StartsWith("thumbcache_", StringComparison.OrdinalIgnoreCase) &&
+                            !fi.Name.StartsWith("iconcache_", StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        TryAddScannedFile(fi, category, targetId, results, maxItems, ref targetCount, cutoffUtc, ref skippedRecent);
+                        if (targetCount >= maxItems) break;
+                    }
+                }
+                catch { }
+            }
+
+            string[] werDirs =
+            [
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Microsoft", "Windows", "WER", "ReportQueue"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Microsoft", "Windows", "WER", "ReportArchive"),
+                Path.Combine(localAppData, "CrashDumps")
+            ];
+
+            foreach (string dir in werDirs)
+            {
+                if (Directory.Exists(dir) && targetCount < maxItems)
+                {
+                    CollectFilesRecursive(new DirectoryInfo(dir), category, targetId, results, maxItems, ref targetCount, cutoffUtc, ref skippedRecent);
+                }
+            }
+        }
+
+        private static void CollectPackageCaches(
+            string category,
+            string targetId,
+            List<CleanerFileItem> results,
+            int maxItems,
+            ref int targetCount)
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            string[] dirs =
+            [
+                Path.Combine(localAppData, "NuGet", "v3-cache"),
+                Path.Combine(localAppData, "NuGet", "plugins-cache"),
+                Path.Combine(appData, "npm-cache")
+            ];
+
+            int dummySkipped = 0;
+            foreach (string dir in dirs)
+            {
+                if (Directory.Exists(dir) && targetCount < maxItems)
+                {
+                    CollectFilesRecursive(new DirectoryInfo(dir), category, targetId, results, maxItems, ref targetCount, null, ref dummySkipped);
+                }
+            }
+        }
+
+        private static void CollectRecycleBinItem(List<CleanerFileItem> results)
+        {
+            try
+            {
+                var info = new SHQUERYRBINFO { cbSize = Marshal.SizeOf<SHQUERYRBINFO>() };
+                int hr = SHQueryRecycleBinW(null, ref info);
+                if (hr == 0 && (info.i64NumItems > 0 || info.i64Size > 0))
+                {
+                    results.Add(new CleanerFileItem
+                    {
+                        Category = "휴지통",
+                        TargetId = "recycle_bin",
+                        FileName = $"휴지통 전체 항목 ({info.i64NumItems:N0}개)",
+                        FullPath = RecycleBinVirtualPath,
+                        FileSizeBytes = info.i64Size,
+                        IsSelected = true
+                    });
+                }
+            }
+            catch { }
+        }
+
+        private static bool TryAddScannedFile(
+            FileInfo fi,
+            string category,
+            string targetId,
+            List<CleanerFileItem> results,
+            int maxItems,
+            ref int targetCount,
+            DateTime? cutoffUtc,
+            ref int skippedRecent)
+        {
+            if (targetCount >= maxItems) return false;
+
+            try
+            {
+                if (cutoffUtc.HasValue && fi.LastWriteTimeUtc > cutoffUtc.Value)
+                {
+                    skippedRecent++;
+                    return true;
+                }
+
+                results.Add(new CleanerFileItem
+                {
+                    Category = category,
+                    TargetId = targetId,
+                    FileName = fi.Name,
+                    FullPath = fi.FullName,
+                    FileSizeBytes = GetActualDiskSize(fi),
+                    IsSelected = true
+                });
+                targetCount++;
+            }
+            catch { }
+
+            return targetCount < maxItems;
         }
 
         private static void CollectFilesRecursive(
@@ -409,31 +685,19 @@ namespace SystemCareSuite.Services
             string category,
             string targetId,
             List<CleanerFileItem> results,
-            int maxItems)
+            int maxItems,
+            ref int targetCount,
+            DateTime? cutoffUtc,
+            ref int skippedRecent)
         {
-            if (!di.Exists) return;
-
-            int currentCountForTarget = results.Count(x => x.TargetId == targetId);
-            if (currentCountForTarget >= maxItems) return;
+            if (!di.Exists || targetCount >= maxItems) return;
 
             try
             {
                 foreach (var fi in di.GetFiles())
                 {
-                    try
-                    {
-                        results.Add(new CleanerFileItem
-                        {
-                            Category = category,
-                            TargetId = targetId,
-                            FileName = fi.Name,
-                            FullPath = fi.FullName,
-                            FileSizeBytes = GetActualDiskSize(fi),
-                            IsSelected = true
-                        });
-                        if (results.Count(x => x.TargetId == targetId) >= maxItems) return;
-                    }
-                    catch { }
+                    if (!TryAddScannedFile(fi, category, targetId, results, maxItems, ref targetCount, cutoffUtc, ref skippedRecent))
+                        return;
                 }
             }
             catch { return; }
@@ -442,8 +706,8 @@ namespace SystemCareSuite.Services
             {
                 foreach (var sub in di.GetDirectories())
                 {
-                    CollectFilesRecursive(sub, category, targetId, results, maxItems);
-                    if (results.Count(x => x.TargetId == targetId) >= maxItems) return;
+                    CollectFilesRecursive(sub, category, targetId, results, maxItems, ref targetCount, cutoffUtc, ref skippedRecent);
+                    if (targetCount >= maxItems) return;
                 }
             }
             catch { }
@@ -452,8 +716,11 @@ namespace SystemCareSuite.Services
         private static void CollectDevFilesRecursive(
             DirectoryInfo di,
             List<CleanerFileItem> results,
-            int maxItems)
+            int maxItems,
+            ref int targetCount)
         {
+            if (targetCount >= maxItems) return;
+
             try
             {
                 foreach (var sub in di.GetDirectories())
@@ -462,14 +729,17 @@ namespace SystemCareSuite.Services
                         continue;
 
                     string name = sub.Name.ToLowerInvariant();
+                    int dummySkipped = 0;
                     if (name is "bin" or "obj" or ".vs")
                     {
-                        CollectFilesRecursive(sub, "개발 캐시", "dev_projects", results, maxItems);
+                        CollectFilesRecursive(sub, "개발 캐시", "dev_projects", results, maxItems, ref targetCount, null, ref dummySkipped);
                     }
                     else if (name is not "publish" and not ".git" and not "node_modules")
                     {
-                        CollectDevFilesRecursive(sub, results, maxItems);
+                        CollectDevFilesRecursive(sub, results, maxItems, ref targetCount);
                     }
+
+                    if (targetCount >= maxItems) return;
                 }
             }
             catch { }
@@ -477,7 +747,7 @@ namespace SystemCareSuite.Services
 
         public static (long FreedBytes, int DeletedFiles, int FailedFiles) DeleteSelectedFiles(
             IEnumerable<CleanerFileItem> filesToDelete,
-            IProgress<string> log)
+            IProgress<(double Percent, string? Log)>? progress)
         {
             var fileList = filesToDelete.ToList();
             if (fileList.Count == 0) return (0, 0, 0);
@@ -492,14 +762,14 @@ namespace SystemCareSuite.Services
                     sc = new ServiceController("wuauserv");
                     if (sc.Status == ServiceControllerStatus.Running)
                     {
-                        log.Report(" -> [서비스] Windows Update(wuauserv) 일시 중지 중...");
+                        progress?.Report((0, " -> [서비스] Windows Update(wuauserv) 일시 중지 중..."));
                         sc.Stop();
                         sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10));
                     }
                 }
                 catch (Exception ex)
                 {
-                    log.Report($" -> [주의] 업데이트 서비스 제어: {ex.Message}");
+                    progress?.Report((0, $" -> [주의] 업데이트 서비스 제어: {ex.Message}"));
                 }
             }
 
@@ -507,13 +777,28 @@ namespace SystemCareSuite.Services
             int deleted = 0;
             int failed = 0;
             var affectedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            int reportStep = Math.Max(1, Math.Min(150, fileList.Count / 20));
 
             for (int i = 0; i < fileList.Count; i++)
             {
                 var item = fileList[i];
                 try
                 {
-                    if (File.Exists(item.FullPath))
+                    if (item.TargetId == "recycle_bin" && item.FullPath == RecycleBinVirtualPath)
+                    {
+                        int hr = SHEmptyRecycleBinW(IntPtr.Zero, null, SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND);
+                        if (hr == 0)
+                        {
+                            freedBytes += item.FileSizeBytes;
+                            deleted++;
+                            progress?.Report(((i + 1) * 100.0 / fileList.Count, $" -> [휴지통] 휴지통 비우기 완료 ({CleanerTargetItem.FormatBytes(item.FileSizeBytes)} 확보)"));
+                        }
+                        else
+                        {
+                            failed++;
+                        }
+                    }
+                    else if (File.Exists(item.FullPath))
                     {
                         long len = item.FileSizeBytes;
                         File.Delete(item.FullPath);
@@ -532,9 +817,14 @@ namespace SystemCareSuite.Services
                     failed++;
                 }
 
-                if ((i + 1) % 150 == 0 || i == fileList.Count - 1)
+                bool isLast = i == fileList.Count - 1;
+                if ((i + 1) % reportStep == 0 || isLast)
                 {
-                    log.Report($" -> [{i + 1}/{fileList.Count}] 파일 삭제 진행 중... ({CleanerTargetItem.FormatBytes(freedBytes)} 확보)");
+                    double pct = (i + 1) * 100.0 / fileList.Count;
+                    string? msg = ((i + 1) % 150 == 0 || isLast)
+                        ? $" -> [{i + 1}/{fileList.Count}] 파일 삭제 진행 중... ({CleanerTargetItem.FormatBytes(freedBytes)} 확보)"
+                        : null;
+                    progress?.Report((pct, msg));
                 }
             }
 
@@ -557,7 +847,7 @@ namespace SystemCareSuite.Services
                 {
                     if (sc.Status == ServiceControllerStatus.Stopped)
                     {
-                        log.Report(" -> [서비스] Windows Update(wuauserv) 재시작 중...");
+                        progress?.Report((100, " -> [서비스] Windows Update(wuauserv) 재시작 중..."));
                         sc.Start();
                     }
                 }
@@ -568,7 +858,7 @@ namespace SystemCareSuite.Services
                 }
             }
 
-            log.Report($" -> 삭제 완료: {deleted:N0}개 삭제 ({CleanerTargetItem.FormatBytes(freedBytes)} 확보, 잠김/실패 {failed:N0}개)");
+            progress?.Report((100, $" -> 삭제 완료: {deleted:N0}개 삭제 ({CleanerTargetItem.FormatBytes(freedBytes)} 확보, 잠김/실패 {failed:N0}개)"));
             return (freedBytes, deleted, failed);
         }
     }
