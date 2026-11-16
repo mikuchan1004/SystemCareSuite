@@ -310,7 +310,7 @@ namespace SystemCareSuite
             _isRamBoostRunning = true;
 
             BtnQuickRamBoost.IsEnabled = false;
-            BtnQuickRamBoost.Content = isAuto ? "🤖 자동 메모리 최적화 중..." : "⚡ 메모리 최적화 중...";
+            BtnQuickRamBoost.Content = isAuto ? "⚡ 자동 메모리 최적화 중..." : "⚡ 메모리 최적화 중...";
 
             try
             {
@@ -326,7 +326,7 @@ namespace SystemCareSuite
                 RefreshTopProcesses();
 
                 string skippedMsg = skipped > 0 ? $", 제외 {skipped}개" : string.Empty;
-                string prefix = isAuto ? "🤖 자동 부스트:" : "✅";
+                string prefix = isAuto ? "⚡ 자동 부스트:" : "✅";
                 TxtRamBoostResult.Text = $"{prefix} {count}개 프로세스 정리 (약 {freedMb:F0} MB 확보{skippedMsg})";
             }
             finally
@@ -721,7 +721,7 @@ namespace SystemCareSuite
 
             if (toggled > 0)
             {
-                TxtRegStatus.Text = $"⏯️ {toggled}개 상태 전환 완료 (사용 {activeCount} · 중지 {disabledCount})";
+                TxtRegStatus.Text = $"🔄 {toggled}개 상태 전환 완료 (사용 {activeCount} · 중지 {disabledCount})";
                 TxtRegStatus.Foreground = AppBrushes.NeonMint;
             }
             else
@@ -749,7 +749,7 @@ namespace SystemCareSuite
 
             bool hasActiveStartup = targets.Any(x => x.Category is "정상 시작앱" or "중지된 시작앱");
             string confirmMsg = hasActiveStartup
-                ? $"선택한 {targets.Count}개 항목 중 시작프로그램이 포함되어 있습니다.\n(삭제 대신 [⏯️ 사용/중지 전환]을 사용할 수도 있습니다.)\n\n정리 전 .reg 백업 파일을 자동 생성한 후 삭제할까요?"
+                ? $"선택한 {targets.Count}개 항목 중 시작프로그램이 포함되어 있습니다.\n(삭제 대신 [🔄 사용/중지 전환]을 사용할 수도 있습니다.)\n\n정리 전 .reg 백업 파일을 자동 생성한 후 삭제할까요?"
                 : $"선택한 {targets.Count}개의 불필요한 레지스트리 항목을 삭제하시겠습니까?\n(정리 직전 Backups 폴더에 .reg 복구 백업이 자동 저장됩니다.)";
 
             if (MessageBox.Show(confirmMsg, "레지스트리 정리 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
