@@ -18,7 +18,7 @@ namespace SystemCareSuite.Services
                 {
                     string json = File.ReadAllText(SettingsFilePath);
                     var loaded = JsonSerializer.Deserialize<List<RamExclusionItem>>(json, AppSettingsService.JsonOptions);
-                    if (loaded != null && loaded.Count > 0)
+                    if (loaded != null)
                     {
                         return loaded;
                     }

@@ -29,11 +29,6 @@ namespace SystemCareSuite.Services
 
             try
             {
-                if (!Directory.Exists(localAppDataDir))
-                {
-                    Directory.CreateDirectory(localAppDataDir);
-                }
-
                 string testFile = Path.Combine(baseDir, $".perm_test_{Guid.NewGuid():N}");
                 File.WriteAllText(testFile, "test");
                 File.Delete(testFile);
@@ -41,6 +36,14 @@ namespace SystemCareSuite.Services
             }
             catch
             {
+                try
+                {
+                    if (!Directory.Exists(localAppDataDir))
+                    {
+                        Directory.CreateDirectory(localAppDataDir);
+                    }
+                }
+                catch { }
                 StorageDirectory = localAppDataDir;
             }
 
@@ -58,7 +61,9 @@ namespace SystemCareSuite.Services
                     var loaded = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions);
                     if (loaded != null)
                     {
-                        loaded.CleanerTargetStates ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                        loaded.CleanerTargetStates = new Dictionary<string, bool>(
+                            loaded.CleanerTargetStates ?? [],
+                            StringComparer.OrdinalIgnoreCase);
                         return loaded;
                     }
                 }

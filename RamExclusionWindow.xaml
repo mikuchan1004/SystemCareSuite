@@ -141,7 +141,9 @@
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" VerticalAlignment="Center" Margin="0,0,10,0" ToolTip="제외 활성 여부 토글"/>
+                                            <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}"
+                                                      Click="ChkExclusionItem_Click"
+                                                      VerticalAlignment="Center" Margin="0,0,10,0" ToolTip="제외 활성 여부 토글"/>
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding ProcessName}" FontSize="13" FontWeight="Bold" Foreground="#00F0FF"/>
                                                 <TextBlock Text="{Binding DisplayName}" FontSize="11.5" Foreground="#8B949E" Margin="0,2,0,0"/>

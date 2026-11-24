@@ -124,14 +124,21 @@ namespace SystemCareSuite
             }
         }
 
+        private void ChkExclusionItem_Click(object sender, RoutedEventArgs e)
+        {
+            UpdateSummary();
+        }
+
         private void BtnEnableAll_Click(object sender, RoutedEventArgs e)
         {
             foreach (var item in _exclusions) item.IsEnabled = true;
+            UpdateSummary();
         }
 
         private void BtnDisableAll_Click(object sender, RoutedEventArgs e)
         {
             foreach (var item in _exclusions) item.IsEnabled = false;
+            UpdateSummary();
         }
 
         private void UpdateSummary()

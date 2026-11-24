@@ -6,9 +6,8 @@
         mc:Ignorable="d"
         Title="SystemCareSuite - All-in-One Windows Care Center"
         Width="1500" Height="815"
-         MinWidth="1500" MinHeight="815"
-         MaxWidth="1500" MaxHeight="815"
-         ResizeMode="CanMinimize"
+        MinWidth="1280" MinHeight="720"
+        ResizeMode="CanResize"
         UseLayoutRounding="True"
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="ClearType"
@@ -318,7 +317,8 @@
                                             <Border Background="#990E1420" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="8" Padding="12,9" Margin="0,0,4,8"
                                                     Cursor="Hand" Tag="{Binding}" ToolTip="우클릭: RAM 제외 추가 · 파일 위치 열기 · 프로세스 종료">
                                                 <Border.ContextMenu>
-                                                    <ContextMenu Background="#151E2E" Foreground="#F0F6FC" BorderBrush="#30405A">
+                                                    <ContextMenu Background="#151E2E" Foreground="#F0F6FC" BorderBrush="#30405A"
+                                                                 Opened="ProcContextMenu_Opened" Closed="ProcContextMenu_Closed">
                                                         <MenuItem Header="🛡️ RAM 부스트 제외 목록에 추가" Click="ProcMenuExclude_Click"/>
                                                         <MenuItem Header="📂 실행 파일 위치 열기" Click="ProcMenuOpenLocation_Click"/>
                                                         <Separator Background="#30405A"/>

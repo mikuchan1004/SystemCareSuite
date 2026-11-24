@@ -185,16 +185,16 @@ namespace SystemCareSuite.Services
             {
                 try
                 {
+                    if (proc.Id == selfPid ||
+                        ProtectedSystemProcesses.Contains(proc.ProcessName) ||
+                        excludedSet.Contains(proc.ProcessName))
+                    {
+                        skipped++;
+                        continue;
+                    }
+
                     if (!proc.HasExited && proc.Handle != IntPtr.Zero)
                     {
-                        if (proc.Id == selfPid ||
-                            ProtectedSystemProcesses.Contains(proc.ProcessName) ||
-                            excludedSet.Contains(proc.ProcessName))
-                        {
-                            skipped++;
-                            continue;
-                        }
-
                         if (EmptyWorkingSet(proc.Handle) != 0)
                             count++;
                     }

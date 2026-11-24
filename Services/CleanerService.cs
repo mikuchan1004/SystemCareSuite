@@ -140,254 +140,6 @@ namespace SystemCareSuite.Services
             }
         ];
 
-        public static long ScanTargetBytes(string targetId, string devRootPath)
-        {
-            return targetId switch
-            {
-                "user_temp" => GetDirSizeSafe(Path.GetTempPath()),
-                "sys_temp" => GetDirSizeSafe(@"C:\Windows\Temp"),
-                "prefetch" => GetDirSizeSafe(@"C:\Windows\Prefetch"),
-                "wu_cache" => GetDirSizeSafe(@"C:\Windows\SoftwareDistribution\Download"),
-                "do_cache" => GetDirSizeSafe(@"C:\Windows\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache"),
-                "discord" => GetDiscordCacheSize(),
-                "dev_projects" => GetDevProjectsSize(devRootPath),
-                _ => 0
-            };
-        }
-
-        public static long CleanTarget(string targetId, string devRootPath, IProgress<string> log)
-        {
-            return targetId switch
-            {
-                "user_temp" => CleanDirectory(Path.GetTempPath(), "사용자 임시 파일", log),
-                "sys_temp" => CleanDirectory(@"C:\Windows\Temp", "Windows 시스템 임시 파일", log),
-                "prefetch" => CleanDirectory(@"C:\Windows\Prefetch", "시스템 프리패치", log),
-                "wu_cache" => CleanWindowsUpdateCache(log),
-                "do_cache" => CleanDirectory(@"C:\Windows\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache", "배달 최적화 캐시", log),
-                "discord" => CleanDiscordCache(log),
-                "dev_projects" => CleanDevProjects(devRootPath, log),
-                _ => 0
-            };
-        }
-
-        private static long GetDiscordCacheSize()
-        {
-            long total = 0;
-            string discordBase = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "discord");
-            string[] subDirs = ["Cache", "Code Cache", "GPUCache"];
-            foreach (var sub in subDirs)
-            {
-                string full = Path.Combine(discordBase, sub);
-                if (Directory.Exists(full))
-                    total += GetDirSizeSafe(full);
-            }
-            return total;
-        }
-
-        private static long CleanDiscordCache(IProgress<string> log)
-        {
-            long freed = 0;
-            string discordBase = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "discord");
-            string[] subDirs = ["Cache", "Code Cache", "GPUCache"];
-            foreach (var sub in subDirs)
-            {
-                string full = Path.Combine(discordBase, sub);
-                if (Directory.Exists(full))
-                    freed += CleanDirectory(full, $"Discord {sub}", log);
-            }
-            return freed;
-        }
-
-        private static long CleanWindowsUpdateCache(IProgress<string> log)
-        {
-            string path = @"C:\Windows\SoftwareDistribution\Download";
-            if (!Directory.Exists(path)) return 0;
-
-            ServiceController? sc = null;
-            long freed = 0;
-            try
-            {
-                sc = new ServiceController("wuauserv");
-                if (sc.Status == ServiceControllerStatus.Running)
-                {
-                    log.Report(" -> [서비스] Windows Update(wuauserv) 일시 중지 중...");
-                    sc.Stop();
-                    sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10));
-                }
-
-                freed = CleanDirectory(path, "Windows 업데이트 캐시", log);
-
-                if (sc.Status == ServiceControllerStatus.Stopped)
-                {
-                    log.Report(" -> [서비스] Windows Update(wuauserv) 재시작 중...");
-                    sc.Start();
-                }
-            }
-            catch (Exception ex)
-            {
-                log.Report($" -> [주의] 업데이트 서비스 제어 중 메시지: {ex.Message}");
-                freed += CleanDirectory(path, "Windows 업데이트 캐시(일반)", log);
-            }
-            finally
-            {
-                sc?.Dispose();
-            }
-            return freed;
-        }
-
-        private static long GetDevProjectsSize(string devRootPath)
-        {
-            if (string.IsNullOrWhiteSpace(devRootPath) || !Directory.Exists(devRootPath))
-                return 0;
-
-            long total = 0;
-            ScanDevDirsRecursive(new DirectoryInfo(devRootPath), ref total);
-            return total;
-        }
-
-        private static void ScanDevDirsRecursive(DirectoryInfo di, ref long total)
-        {
-            try
-            {
-                foreach (var sub in di.GetDirectories())
-                {
-                    if (sub.FullName.Contains("SystemCareSuite", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    string name = sub.Name.ToLowerInvariant();
-                    if (name is "bin" or "obj" or ".vs")
-                    {
-                        total += GetDirSizeSafe(sub.FullName);
-                    }
-                    else if (name is not "publish" and not ".git" and not "node_modules")
-                    {
-                        ScanDevDirsRecursive(sub, ref total);
-                    }
-                }
-            }
-            catch { }
-        }
-
-        private static long CleanDevProjects(string devRootPath, IProgress<string> log)
-        {
-            if (string.IsNullOrWhiteSpace(devRootPath) || !Directory.Exists(devRootPath))
-                return 0;
-
-            long freed = 0;
-            int folderCount = 0;
-            CleanDevDirsRecursive(new DirectoryInfo(devRootPath), ref freed, ref folderCount, log);
-            log.Report($" -> 개발 빌드 캐시 폴더 {folderCount}개 정리 완료 ({CleanerTargetItem.FormatBytes(freed)})");
-            return freed;
-        }
-
-        private static void CleanDevDirsRecursive(DirectoryInfo di, ref long freed, ref int folderCount, IProgress<string> log)
-        {
-            try
-            {
-                foreach (var sub in di.GetDirectories())
-                {
-                    if (sub.FullName.Contains("SystemCareSuite", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    string name = sub.Name.ToLowerInvariant();
-                    if (name is "bin" or "obj" or ".vs")
-                    {
-                        int deletedFiles = 0;
-                        SafeCleanDirectoryRecursive(sub, ref freed, ref deletedFiles);
-                        try
-                        {
-                            if (sub.Exists) sub.Delete(true);
-                        }
-                        catch { }
-                        folderCount++;
-                    }
-                    else if (name is not "publish" and not ".git" and not "node_modules")
-                    {
-                        CleanDevDirsRecursive(sub, ref freed, ref folderCount, log);
-                    }
-                }
-            }
-            catch { }
-        }
-
-        private static long CleanDirectory(string path, string label, IProgress<string> log)
-        {
-            if (!Directory.Exists(path))
-            {
-                log.Report($"[건너뜀] {label} 경로가 존재하지 않습니다.");
-                return 0;
-            }
-
-            long freed = 0;
-            int count = 0;
-            log.Report($"[정리 중] {label} ({path})");
-            SafeCleanDirectoryRecursive(new DirectoryInfo(path), ref freed, ref count);
-            log.Report($" -> {count:N0}개 파일 삭제 완료 ({CleanerTargetItem.FormatBytes(freed)} 확보)");
-            return freed;
-        }
-
-        private static void SafeCleanDirectoryRecursive(DirectoryInfo di, ref long freedBytes, ref int count)
-        {
-            try
-            {
-                foreach (FileInfo file in di.GetFiles())
-                {
-                    try
-                    {
-                        long len = GetActualDiskSize(file);
-                        file.Delete();
-                        freedBytes += len;
-                        count++;
-                    }
-                    catch { }
-                }
-            }
-            catch { return; }
-
-            try
-            {
-                foreach (DirectoryInfo subDir in di.GetDirectories())
-                {
-                    SafeCleanDirectoryRecursive(subDir, ref freedBytes, ref count);
-                    try
-                    {
-                        if (subDir.Exists) subDir.Delete(false);
-                    }
-                    catch { }
-                }
-            }
-            catch { }
-        }
-
-        private static long GetDirSizeSafe(string path)
-        {
-            if (!Directory.Exists(path)) return 0;
-            long size = 0;
-            AccumulateDirSize(new DirectoryInfo(path), ref size);
-            return size;
-        }
-
-        private static void AccumulateDirSize(DirectoryInfo di, ref long size)
-        {
-            try
-            {
-                foreach (FileInfo fi in di.GetFiles())
-                {
-                    try { size += GetActualDiskSize(fi); } catch { }
-                }
-            }
-            catch { return; }
-
-            try
-            {
-                foreach (DirectoryInfo sub in di.GetDirectories())
-                {
-                    AccumulateDirSize(sub, ref size);
-                }
-            }
-            catch { }
-        }
-
         // =====================================================================
         // DETAILED FILE SCAN & SELECTIVE DELETE
         // =====================================================================
@@ -609,6 +361,7 @@ namespace SystemCareSuite.Services
             [
                 Path.Combine(localAppData, "NuGet", "v3-cache"),
                 Path.Combine(localAppData, "NuGet", "plugins-cache"),
+                Path.Combine(localAppData, "npm-cache"),
                 Path.Combine(appData, "npm-cache")
             ];
 
@@ -620,6 +373,121 @@ namespace SystemCareSuite.Services
                     CollectFilesRecursive(new DirectoryInfo(dir), category, targetId, results, maxItems, ref targetCount, null, ref dummySkipped);
                 }
             }
+        }
+
+        private static bool IsReparsePoint(FileSystemInfo fsi)
+        {
+            try
+            {
+                return (fsi.Attributes & FileAttributes.ReparsePoint) != 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string NormalizeDirPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return string.Empty;
+            try
+            {
+                return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static HashSet<string> BuildProtectedRootSet(string? devRootPath = null)
+        {
+            var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            void AddRoot(string? path)
+            {
+                string norm = NormalizeDirPath(path ?? string.Empty);
+                if (!string.IsNullOrEmpty(norm))
+                {
+                    roots.Add(norm);
+                }
+            }
+
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            string commonAppData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+
+            AddRoot(Path.GetTempPath());
+            AddRoot(@"C:\Windows\Temp");
+            AddRoot(@"C:\Windows\Prefetch");
+            AddRoot(@"C:\Windows\SoftwareDistribution\Download");
+            AddRoot(@"C:\Windows\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache");
+
+            string discordBase = Path.Combine(appData, "discord");
+            AddRoot(discordBase);
+            foreach (string sub in new[] { "Cache", "Code Cache", "GPUCache" })
+            {
+                AddRoot(Path.Combine(discordBase, sub));
+            }
+
+            string[] browserRoots =
+            [
+                Path.Combine(localAppData, "Google", "Chrome", "User Data"),
+                Path.Combine(localAppData, "Microsoft", "Edge", "User Data")
+            ];
+            foreach (string bRoot in browserRoots)
+            {
+                AddRoot(bRoot);
+                if (!Directory.Exists(bRoot)) continue;
+                try
+                {
+                    foreach (var profileDir in new DirectoryInfo(bRoot).GetDirectories())
+                    {
+                        if (!profileDir.Name.Equals("Default", StringComparison.OrdinalIgnoreCase) &&
+                            !profileDir.Name.StartsWith("Profile ", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        AddRoot(profileDir.FullName);
+                        foreach (string sub in new[] { "Cache", "Code Cache", "GPUCache" })
+                        {
+                            AddRoot(Path.Combine(profileDir.FullName, sub));
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            AddRoot(Path.Combine(localAppData, "Microsoft", "Windows", "Explorer"));
+            AddRoot(Path.Combine(commonAppData, "Microsoft", "Windows", "WER", "ReportQueue"));
+            AddRoot(Path.Combine(commonAppData, "Microsoft", "Windows", "WER", "ReportArchive"));
+            AddRoot(Path.Combine(localAppData, "CrashDumps"));
+            AddRoot(Path.Combine(localAppData, "NuGet", "v3-cache"));
+            AddRoot(Path.Combine(localAppData, "NuGet", "plugins-cache"));
+            AddRoot(Path.Combine(localAppData, "npm-cache"));
+            AddRoot(Path.Combine(appData, "npm-cache"));
+
+            if (!string.IsNullOrWhiteSpace(devRootPath))
+            {
+                AddRoot(devRootPath);
+            }
+
+            return roots;
+        }
+
+        private static bool IsProtectedDirectory(string dirPath, HashSet<string> protectedRoots)
+        {
+            string norm = NormalizeDirPath(dirPath);
+            if (string.IsNullOrEmpty(norm)) return true;
+
+            string driveRoot = NormalizeDirPath(Path.GetPathRoot(norm) ?? string.Empty);
+            if (!string.IsNullOrEmpty(driveRoot) && norm.Equals(driveRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return protectedRoots.Contains(norm);
         }
 
         private static void CollectRecycleBinItem(List<CleanerFileItem> results)
@@ -690,7 +558,7 @@ namespace SystemCareSuite.Services
             DateTime? cutoffUtc,
             ref int skippedRecent)
         {
-            if (!di.Exists || targetCount >= maxItems) return;
+            if (!di.Exists || IsReparsePoint(di) || targetCount >= maxItems) return;
 
             try
             {
@@ -706,6 +574,7 @@ namespace SystemCareSuite.Services
             {
                 foreach (var sub in di.GetDirectories())
                 {
+                    if (IsReparsePoint(sub)) continue;
                     CollectFilesRecursive(sub, category, targetId, results, maxItems, ref targetCount, cutoffUtc, ref skippedRecent);
                     if (targetCount >= maxItems) return;
                 }
@@ -719,13 +588,13 @@ namespace SystemCareSuite.Services
             int maxItems,
             ref int targetCount)
         {
-            if (targetCount >= maxItems) return;
+            if (!di.Exists || IsReparsePoint(di) || targetCount >= maxItems) return;
 
             try
             {
                 foreach (var sub in di.GetDirectories())
                 {
-                    if (sub.FullName.Contains("SystemCareSuite", StringComparison.OrdinalIgnoreCase))
+                    if (IsReparsePoint(sub) || sub.FullName.Contains("SystemCareSuite", StringComparison.OrdinalIgnoreCase))
                         continue;
 
                     string name = sub.Name.ToLowerInvariant();
@@ -745,15 +614,17 @@ namespace SystemCareSuite.Services
             catch { }
         }
 
-        public static (long FreedBytes, int DeletedFiles, int FailedFiles) DeleteSelectedFiles(
+        public static (long FreedBytes, int DeletedFiles, int FailedFiles, bool RecycleBinEmptied) DeleteSelectedFiles(
             IEnumerable<CleanerFileItem> filesToDelete,
-            IProgress<(double Percent, string? Log)>? progress)
+            IProgress<(double Percent, string? Log)>? progress,
+            string? devRootPath = null)
         {
             var fileList = filesToDelete.ToList();
-            if (fileList.Count == 0) return (0, 0, 0);
+            if (fileList.Count == 0) return (0, 0, 0, false);
 
             bool hasWuFiles = fileList.Any(x => x.TargetId == "wu_cache");
             ServiceController? sc = null;
+            bool stoppedWuService = false;
 
             if (hasWuFiles)
             {
@@ -765,6 +636,7 @@ namespace SystemCareSuite.Services
                         progress?.Report((0, " -> [서비스] Windows Update(wuauserv) 일시 중지 중..."));
                         sc.Stop();
                         sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10));
+                        stoppedWuService = true;
                     }
                 }
                 catch (Exception ex)
@@ -776,6 +648,7 @@ namespace SystemCareSuite.Services
             long freedBytes = 0;
             int deleted = 0;
             int failed = 0;
+            bool recycleBinEmptied = false;
             var affectedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int reportStep = Math.Max(1, Math.Min(150, fileList.Count / 20));
 
@@ -791,6 +664,7 @@ namespace SystemCareSuite.Services
                         {
                             freedBytes += item.FileSizeBytes;
                             deleted++;
+                            recycleBinEmptied = true;
                             progress?.Report(((i + 1) * 100.0 / fileList.Count, $" -> [휴지통] 휴지통 비우기 완료 ({CleanerTargetItem.FormatBytes(item.FileSizeBytes)} 확보)"));
                         }
                         else
@@ -828,11 +702,14 @@ namespace SystemCareSuite.Services
                 }
             }
 
-            // 빈 폴더 정리 시도
+            // 빈 폴더 정리 시도 (시스템/캐시 루트 폴더는 보호)
+            var protectedRoots = BuildProtectedRootSet(devRootPath);
             foreach (var dir in affectedDirs.OrderByDescending(d => d.Length))
             {
                 try
                 {
+                    if (IsProtectedDirectory(dir, protectedRoots)) continue;
+
                     if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())
                     {
                         Directory.Delete(dir, false);
@@ -841,11 +718,11 @@ namespace SystemCareSuite.Services
                 catch { }
             }
 
-            if (hasWuFiles && sc != null)
+            if (sc != null)
             {
                 try
                 {
-                    if (sc.Status == ServiceControllerStatus.Stopped)
+                    if (stoppedWuService && sc.Status == ServiceControllerStatus.Stopped)
                     {
                         progress?.Report((100, " -> [서비스] Windows Update(wuauserv) 재시작 중..."));
                         sc.Start();
@@ -859,7 +736,7 @@ namespace SystemCareSuite.Services
             }
 
             progress?.Report((100, $" -> 삭제 완료: {deleted:N0}개 삭제 ({CleanerTargetItem.FormatBytes(freedBytes)} 확보, 잠김/실패 {failed:N0}개)"));
-            return (freedBytes, deleted, failed);
+            return (freedBytes, deleted, failed, recycleBinEmptied);
         }
     }
 }

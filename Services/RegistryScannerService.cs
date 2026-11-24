@@ -95,18 +95,32 @@ namespace SystemCareSuite.Services
                 using RegistryKey? key = Registry.CurrentUser.OpenSubKey(muiPath);
                 if (key == null) return results;
 
+                var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
                 foreach (string valueName in key.GetValueNames())
                 {
-                    if (string.IsNullOrEmpty(valueName) || valueName == "LangID") continue;
-
-                    string potentialPath = valueName;
-                    if (valueName.Contains(".ApplicationCompany") || valueName.Contains(".FriendlyAppName"))
+                    if (string.IsNullOrEmpty(valueName) ||
+                        valueName.Equals("LangID", StringComparison.OrdinalIgnoreCase) ||
+                        valueName.StartsWith('@'))
                     {
-                        int exeIndex = valueName.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
-                        if (exeIndex != -1) potentialPath = valueName[..(exeIndex + 4)];
+                        continue;
                     }
 
-                    if (!string.IsNullOrEmpty(potentialPath) && potentialPath.Contains('\\') && !File.Exists(potentialPath))
+                    string potentialPath = valueName;
+                    if (valueName.EndsWith(".FriendlyAppName", StringComparison.OrdinalIgnoreCase))
+                    {
+                        potentialPath = valueName[..^".FriendlyAppName".Length];
+                    }
+                    else if (valueName.EndsWith(".ApplicationCompany", StringComparison.OrdinalIgnoreCase))
+                    {
+                        potentialPath = valueName[..^".ApplicationCompany".Length];
+                    }
+
+                    if (!string.IsNullOrEmpty(potentialPath) &&
+                        potentialPath.Contains('\\') &&
+                        Path.IsPathRooted(potentialPath) &&
+                        !File.Exists(potentialPath) &&
+                        seenPaths.Add(potentialPath))
                     {
                         results.Add(new RegistryItem
                         {
@@ -123,6 +137,14 @@ namespace SystemCareSuite.Services
             catch { }
 
             return results;
+        }
+
+        private static bool IsMatchingMuiValue(string valueName, string targetPath)
+        {
+            if (string.IsNullOrEmpty(targetPath)) return false;
+            return valueName.Equals(targetPath, StringComparison.OrdinalIgnoreCase) ||
+                   valueName.Equals(targetPath + ".FriendlyAppName", StringComparison.OrdinalIgnoreCase) ||
+                   valueName.Equals(targetPath + ".ApplicationCompany", StringComparison.OrdinalIgnoreCase);
         }
 
         public static List<RegistryItem> ScanFileExtensions()
@@ -163,6 +185,62 @@ namespace SystemCareSuite.Services
             return results;
         }
 
+        private static readonly string[] ExecutableExtensions =
+        [
+            ".exe", ".bat", ".cmd", ".com", ".msi", ".vbs", ".ps1", ".lnk"
+        ];
+
+        private static bool HasExecutableExtension(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return false;
+            return ExecutableExtensions.Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool ExistsOnSystemPath(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName)) return false;
+            try
+            {
+                string cleanFile = fileName.Trim();
+                if (cleanFile.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+                    return false;
+
+                var searchDirs = new List<string>
+                {
+                    Environment.SystemDirectory,
+                    Environment.GetFolderPath(Environment.SpecialFolder.Windows)
+                };
+
+                string? pathEnv = Environment.GetEnvironmentVariable("PATH");
+                if (!string.IsNullOrWhiteSpace(pathEnv))
+                {
+                    searchDirs.AddRange(pathEnv.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+                }
+
+                bool hasExt = Path.HasExtension(cleanFile);
+                foreach (string dir in searchDirs.Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    if (string.IsNullOrWhiteSpace(dir)) continue;
+                    try
+                    {
+                        string candidate = Path.Combine(dir, cleanFile);
+                        if (File.Exists(candidate)) return true;
+
+                        if (!hasExt)
+                        {
+                            foreach (string ext in ExecutableExtensions)
+                            {
+                                if (File.Exists(candidate + ext)) return true;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            return false;
+        }
+
         private static void CheckStartupRegistry(RegistryKey root, string subKey, bool onlyBroken, List<RegistryItem> results)
         {
             try
@@ -179,9 +257,10 @@ namespace SystemCareSuite.Services
 
                     string rawData = val.ToString() ?? string.Empty;
                     string cleanPath = ParseExecutablePath(rawData);
-                    bool exists = !string.IsNullOrEmpty(cleanPath) && File.Exists(cleanPath);
+                    bool hasRoot = !string.IsNullOrEmpty(cleanPath) && Path.IsPathRooted(cleanPath);
+                    bool exists = !string.IsNullOrEmpty(cleanPath) && (hasRoot ? File.Exists(cleanPath) : ExistsOnSystemPath(cleanPath));
 
-                    if (onlyBroken && !exists && !string.IsNullOrEmpty(cleanPath))
+                    if (onlyBroken && !exists && (hasRoot || HasExecutableExtension(cleanPath)))
                     {
                         results.Add(new RegistryItem
                         {
@@ -384,7 +463,7 @@ namespace SystemCareSuite.Services
                         {
                             foreach (string valName in key.GetValueNames())
                             {
-                                if (!string.IsNullOrEmpty(item.Data) && valName.Contains(item.Data, StringComparison.OrdinalIgnoreCase))
+                                if (IsMatchingMuiValue(valName, item.Data))
                                 {
                                     valueNamesToExport.Add(valName);
                                 }
@@ -544,7 +623,7 @@ namespace SystemCareSuite.Services
                     bool deletedAny = false;
                     foreach (string valName in key.GetValueNames())
                     {
-                        if (!string.IsNullOrEmpty(target) && valName.Contains(target, StringComparison.OrdinalIgnoreCase))
+                        if (IsMatchingMuiValue(valName, target))
                         {
                             key.DeleteValue(valName, false);
                             deletedAny = true;
@@ -562,6 +641,47 @@ namespace SystemCareSuite.Services
             return false;
         }
 
+        public static string? BackupStartupFolderFiles(IEnumerable<RegistryItem> items)
+        {
+            var startupItems = items.Where(x =>
+            {
+                var (_, subKeyPath) = ParseRootAndSubKey(x.KeyPath);
+                return subKeyPath.Equals("StartupFolder", StringComparison.OrdinalIgnoreCase) &&
+                       !string.IsNullOrWhiteSpace(x.Data) &&
+                       File.Exists(x.Data);
+            }).ToList();
+
+            if (startupItems.Count == 0) return null;
+
+            try
+            {
+                string backupDir = Path.Combine(
+                    AppSettingsService.BackupsDirectory,
+                    $"StartupFiles_{DateTime.Now:yyyyMMdd_HHmmss}");
+                Directory.CreateDirectory(backupDir);
+
+                int copied = 0;
+                foreach (var item in startupItems)
+                {
+                    string fileName = Path.GetFileName(item.Data);
+                    string destPath = Path.Combine(backupDir, fileName);
+                    if (File.Exists(destPath))
+                    {
+                        string prefix = item.KeyPath.StartsWith("HKLM", StringComparison.OrdinalIgnoreCase) ? "HKLM" : "HKCU";
+                        destPath = Path.Combine(backupDir, $"{prefix}_{fileName}");
+                    }
+                    File.Copy(item.Data, destPath, overwrite: true);
+                    copied++;
+                }
+
+                return copied > 0 ? backupDir : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private static string ParseExecutablePath(string rawCommand)
         {
             if (string.IsNullOrWhiteSpace(rawCommand)) return string.Empty;
@@ -574,9 +694,22 @@ namespace SystemCareSuite.Services
                     return expanded[1..nextQuote];
             }
 
-            int exeIdx = expanded.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
-            if (exeIdx != -1)
-                return expanded[..(exeIdx + 4)].Trim('\"');
+            foreach (string ext in ExecutableExtensions)
+            {
+                int searchStart = 0;
+                while (searchStart < expanded.Length)
+                {
+                    int idx = expanded.IndexOf(ext, searchStart, StringComparison.OrdinalIgnoreCase);
+                    if (idx == -1) break;
+
+                    int endIdx = idx + ext.Length;
+                    if (endIdx == expanded.Length || char.IsWhiteSpace(expanded[endIdx]))
+                    {
+                        return expanded[..endIdx].Trim('\"');
+                    }
+                    searchStart = endIdx;
+                }
+            }
 
             return expanded.Split(' ')[0].Trim('\"');
         }
