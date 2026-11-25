@@ -1,10 +1,31 @@
+<div align="center">
+
 # 🛡️ SystemCareSuite
 
-[![Framework](https://img.shields.io/badge/.NET-8.0-512BD4?logo=.net&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/8.0)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/mikuchan1004/SystemCareSuite?color=brightgreen&logo=github)](https://github.com/mikuchan1004/SystemCareSuite/releases/latest)
-[![VirusTotal](https://img.shields.io/badge/VirusTotal-Safe%20%26%20Clean-0066FF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/c8ad18fac63f1d4a18501def8cd99e1aa3df01fac2e3cab157acaae50011002f)
-[![Collaborated with Gemini](https://img.shields.io/badge/Collaborated%20with-Gemini-4285F4?logo=google-gemini&logoColor=white)](#)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<p>
+  <a href="https://github.com/mikuchan1004/SystemCareSuite/releases/latest">
+    <img src="https://img.shields.io/github/v/release/mikuchan1004/SystemCareSuite?style=for-the-badge&logo=github&logoColor=white&label=Release&labelColor=1E2430&color=2EA043" alt="GitHub Release" />
+  </a>
+  <a href="https://github.com/mikuchan1004/SystemCareSuite/releases">
+    <img src="https://img.shields.io/github/downloads/mikuchan1004/SystemCareSuite/total?style=for-the-badge&logo=github&logoColor=white&label=Downloads&labelColor=1E2430&color=0EA5E9" alt="GitHub Downloads" />
+  </a>
+  <a href="https://dotnet.microsoft.com/download/dotnet/8.0">
+    <img src="https://img.shields.io/badge/.NET-8.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white&labelColor=1E2430" alt=".NET 8.0" />
+  </a>
+  <img src="https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078D4?style=for-the-badge&labelColor=1E2430" alt="Platform Windows 10 / 11" />
+  <br />
+  <a href="https://www.virustotal.com/gui/file/c8ad18fac63f1d4a18501def8cd99e1aa3df01fac2e3cab157acaae50011002f">
+    <img src="https://img.shields.io/badge/VirusTotal-Safe%20%26%20Clean-394EFF?style=for-the-badge&logo=virustotal&logoColor=white&labelColor=1E2430" alt="VirusTotal Safe & Clean" />
+  </a>
+  <a href="#">
+    <img src="https://img.shields.io/badge/Collaborated%20with-Gemini-4285F4?style=for-the-badge&logo=google-gemini&logoColor=white&labelColor=1E2430" alt="Collaborated with Gemini" />
+  </a>
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge&logo=opensourceinitiative&logoColor=white&labelColor=1E2430" alt="License: MIT" />
+  </a>
+</p>
+
+</div>
 
 **SystemCareSuite**는 시스템 상태 확인, 메모리 최적화, 임시파일 정리, 레지스트리 정리 및 WinSxS 저장소 관리를 한 번에 해주는 **.NET 8.0 및 WPF 기반 올인원 시스템 케어 도구**입니다.
 
