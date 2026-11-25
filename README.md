@@ -4,25 +4,26 @@
 
 <p>
   <a href="https://github.com/mikuchan1004/SystemCareSuite/releases/latest">
-    <img src="https://img.shields.io/github/v/release/mikuchan1004/SystemCareSuite?style=for-the-badge&logo=github&logoColor=white&label=Release&labelColor=1E2430&color=2EA043" alt="GitHub Release" />
+    <img src="https://img.shields.io/github/v/release/mikuchan1004/SystemCareSuite?style=for-the-badge&logo=github&logoColor=white&label=Release&color=93C5FD" alt="GitHub Release" />
   </a>
   <a href="https://github.com/mikuchan1004/SystemCareSuite/releases">
-    <img src="https://img.shields.io/github/downloads/mikuchan1004/SystemCareSuite/total?style=for-the-badge&logo=github&logoColor=white&label=Downloads&labelColor=1E2430&color=0EA5E9" alt="GitHub Downloads" />
+    <img src="https://img.shields.io/github/downloads/mikuchan1004/SystemCareSuite/total?style=for-the-badge&logo=github&logoColor=white&label=Downloads&color=86EFAC" alt="GitHub Downloads" />
   </a>
-  <a href="https://dotnet.microsoft.com/download/dotnet/8.0">
-    <img src="https://img.shields.io/badge/.NET-8.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white&labelColor=1E2430" alt=".NET 8.0" />
-  </a>
-  <img src="https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078D4?style=for-the-badge&labelColor=1E2430" alt="Platform Windows 10 / 11" />
-  <br />
   <a href="https://www.virustotal.com/gui/file/c8ad18fac63f1d4a18501def8cd99e1aa3df01fac2e3cab157acaae50011002f">
-    <img src="https://img.shields.io/badge/VirusTotal-Safe%20%26%20Clean-394EFF?style=for-the-badge&logo=virustotal&logoColor=white&labelColor=1E2430" alt="VirusTotal Safe & Clean" />
+    <img src="https://img.shields.io/badge/VirusTotal-Safe%20%26%20Clean-22C55E?style=for-the-badge&logo=virustotal&logoColor=white" alt="VirusTotal Safe & Clean" />
   </a>
-  <a href="#">
-    <img src="https://img.shields.io/badge/Collaborated%20with-Gemini-4285F4?style=for-the-badge&logo=google-gemini&logoColor=white&labelColor=1E2430" alt="Collaborated with Gemini" />
+  <img src="https://img.shields.io/badge/Windows-10%2F11%20x64-0078D4?style=for-the-badge" alt="Windows 10/11 x64" />
+  <br />
+  <a href="https://dotnet.microsoft.com/download/dotnet/8.0">
+    <img src="https://img.shields.io/badge/.NET-8.0%20WPF-512BD4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET 8.0 WPF" />
   </a>
+  <img src="https://img.shields.io/badge/C%23-12-239120?style=for-the-badge&logo=dotnet&logoColor=white" alt="C# 12" />
   <a href="https://opensource.org/licenses/MIT">
-    <img src="https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge&logo=opensourceinitiative&logoColor=white&labelColor=1E2430" alt="License: MIT" />
+    <img src="https://img.shields.io/badge/License-MIT-4479A1?style=for-the-badge&logo=opensourceinitiative&logoColor=white" alt="License: MIT" />
   </a>
+  <img src="https://img.shields.io/badge/Co--Created%20with-Google%20Gemini%20AI-8E75B2?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Co-Created with Google Gemini AI" />
+  <br />
+  <img src="https://img.shields.io/badge/AI%20Partner-Antigravity%20%26%20Luna-C4B5FD?style=for-the-badge&logo=google-gemini&logoColor=1E1B4B" alt="AI Partner Antigravity & Luna" />
 </p>
 
 </div>
